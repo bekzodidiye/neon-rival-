@@ -32,6 +32,16 @@ export interface VehicleStats {
   weight: number; // kg (affects knockback resistance)
 }
 
+export interface VehicleDimensions {
+  length: number; // meters (bumper to bumper)
+  width: number; // meters (body width for OBB collision & rendering)
+  height: number; // meters (overall roof height)
+  wheelBase: number; // meters (front axle to rear axle)
+  trackWidth: number; // meters (left wheel center to right wheel center)
+  wheelRadius: number; // meters
+  rideHeight: number; // meters (suspension rest clearance)
+}
+
 export interface VehicleConfig {
   id: string;
   name: string;
@@ -39,7 +49,9 @@ export interface VehicleConfig {
   vehicleClass: VehicleClass;
   archetype: VehicleArchetype;
   handlingArchetype: HandlingArchetype;
+  modelStatus?: 'sculpted' | 'prototype';
   price: number;
+  dimensions: VehicleDimensions;
   defaultCustomization: VehicleCustomization;
   stats: VehicleStats;
   /** Display scores 0-100 for Garage UI */
@@ -138,7 +150,10 @@ export interface RacerState {
   x: number;
   y: number;
   z: number;
+  prevX?: number;
+  prevZ?: number;
   vx: number;
+  vy?: number;
   vz: number;
   heading: number; // radians, 0 = +Z, atan2(dx, dz)
   angularVel: number;
@@ -148,6 +163,10 @@ export interface RacerState {
   wheelSpin: number;
   bodyPitch: number;
   bodyRoll: number;
+  grounded?: boolean;
+  airborneTime?: number;
+  suspCompression?: [number, number, number, number]; // [FL, FR, RL, RR] 0..1
+  lastSafeTrackT?: number;
 
   // Drift & boost
   isDrifting: boolean;

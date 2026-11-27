@@ -16,7 +16,7 @@ interface CareerModalProps {
   language: LanguageCode;
   onStartCareerEvent: (ev: CareerEvent) => void;
   onClaimMission: (missionId: string, rewardCredits: number) => void;
-  onAuthSuccess: (username: string, isGuest: boolean, serverData?: Partial<PlayerProfile>) => void;
+  onAuthSuccess: (username: string, isGuest: boolean, serverData?: Partial<PlayerProfile>, token?: string) => void;
   onBack: () => void;
 }
 
@@ -37,7 +37,8 @@ export const CareerModal: React.FC<CareerModalProps> = ({
   const [authStatus, setAuthStatus] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch('/api/leaderboard')
+    const apiBase = ((import.meta.env.VITE_API_BASE_URL as string | undefined) || '').replace(/\/$/, '');
+    fetch(`${apiBase}/api/leaderboard`)
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (data?.leaderboard?.length) setLeaderboard(data.leaderboard);
@@ -49,12 +50,13 @@ export const CareerModal: React.FC<CareerModalProps> = ({
     e.preventDefault();
     setAuthError(null);
     setAuthStatus(null);
-    if (username.trim().length < 3 || password.length < 4) {
-      setAuthError('Enter a username (3+ chars) and password (4+ chars).');
+    if (username.trim().length < 3 || password.length < 6) {
+      setAuthError('Enter a username (3+ chars) and password (6+ chars).');
       return;
     }
     try {
-      const res = await fetch(`/api/auth/${authMode}`, {
+      const apiBase = ((import.meta.env.VITE_API_BASE_URL as string | undefined) || '').replace(/\/$/, '');
+      const res = await fetch(`${apiBase}/api/auth/${authMode}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: username.trim(), password }),
@@ -64,7 +66,7 @@ export const CareerModal: React.FC<CareerModalProps> = ({
         setAuthError(json.error || 'Authentication failed.');
         return;
       }
-      onAuthSuccess(json.user.username, false, json.user);
+      onAuthSuccess(json.user.username, false, json.user, json.token);
       setAuthStatus(`Signed in as ${json.user.username} (server-persisted).`);
       setPassword('');
     } catch {

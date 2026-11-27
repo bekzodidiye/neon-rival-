@@ -1,6 +1,17 @@
 import type { GameModeId, MultiplayerRoomInfo, PowerUpType, TrackId, VehicleCustomization } from '../game/types';
 import type { RemoteRacerPatch } from '../engine/RaceEngine';
 
+export interface PlayerInputMessage {
+  type: 'input';
+  sequence: number;
+  throttle: number;
+  brake: number;
+  steering: number;
+  drift: boolean;
+  firePowerUp: boolean;
+  rearFire: boolean;
+}
+
 export interface MultiplayerClientEvents {
   onConnectionChange: (connected: boolean) => void;
   onRoomUpdate: (room: MultiplayerRoomInfo | null) => void;
@@ -18,6 +29,7 @@ export class MultiplayerClient {
   public playerId: string | null = null;
   private pingInterval = 0;
   private lastPingSent = 0;
+  private inputSequence = 0;
 
   constructor(events: MultiplayerClientEvents) {
     this.events = events;
@@ -27,8 +39,9 @@ export class MultiplayerClient {
     if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
       return;
     }
+    const configuredUrl = (import.meta.env.VITE_GAME_SERVER_WS_URL as string | undefined)?.trim();
     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const url = `${proto}//${window.location.host}/ws`;
+    const url = configuredUrl || `${proto}//${window.location.host}/ws`;
 
     try {
       this.ws = new WebSocket(url);
@@ -138,6 +151,15 @@ export class MultiplayerClient {
 
   public leaveRoom(): void {
     this.send({ type: 'leave_room' });
+  }
+
+  public sendPlayerInput(input: Omit<PlayerInputMessage, 'type' | 'sequence'>): void {
+    this.inputSequence += 1;
+    this.send({
+      type: 'input',
+      sequence: this.inputSequence,
+      ...input,
+    });
   }
 
   public sendRaceState(state: Record<string, unknown>): void {

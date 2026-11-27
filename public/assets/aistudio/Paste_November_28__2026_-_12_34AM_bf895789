@@ -1,0 +1,1883 @@
+# NEON RIVALS — REPOSITORY-BASED AAA QUALITY REBUILD V5.0
+
+## CRITICAL INSTRUCTION
+
+Act as a Principal Game Developer, Principal Full-Stack Engineer, Vehicle Physics Engineer, Senior Technical Artist, Graphics Engineer, Multiplayer Architect and QA Engineer.
+
+You are working on an EXISTING project.
+
+Repository:
+https://github.com/bekzodidiye/neon-rival-/
+
+Production:
+https://neon-rival-sigma.vercel.app/
+
+Primary reference: Blur (2010).
+
+Do not create a new project.
+
+Do not generate another theoretical specification.
+
+The existing project has already received multiple master prompts, but the resulting implementation does not satisfy the expected gameplay and visual quality.
+
+Your task is to correct the actual implementation, not add more superficial features.
+
+Previous specifications remain applicable where they do not conflict with this corrective specification.
+
+This document takes priority for technical quality, architecture, physics, assets, graphics, multiplayer and acceptance testing.
+
+---
+
+## 1. VERIFIED REPOSITORY CONTEXT
+
+The existing project contains:
+
+- React.
+- TypeScript.
+- Three.js.
+- Vite.
+- Express.
+- Native WebSocket transport using ws.
+- Five vehicle configurations.
+- Three tracks.
+- Eight power-up categories.
+- Three-slot inventory.
+- Arcade vehicle controller.
+- Procedural vehicle meshes.
+- Procedural environment geometry.
+- AI opponents.
+- PWA.
+- Local progression.
+- Multiplayer prototype.
+- Game logic tests.
+
+Existing important files:
+
+- src/App.tsx
+- src/engine/RaceEngine.ts
+- src/engine/vehicleMesh.ts
+- src/engine/trackMesh.ts
+- src/engine/proceduralTextures.ts
+- src/engine/motionBlur.ts
+- src/engine/input.ts
+- src/engine/audio.ts
+- src/game/physics.ts
+- src/game/trackMath.ts
+- src/game/vehicles.ts
+- src/game/ai.ts
+- src/game/powerups.ts
+- src/game/combatResolver.ts
+- src/game/progression.ts
+- src/game/types.ts
+- src/game/gameLogic.test.ts
+- src/net/multiplayerClient.ts
+- src/components/HudOverlay.tsx
+- src/components/GarageDock.tsx
+- src/components/MainMenuOverlay.tsx
+- src/components/CareerModal.tsx
+- src/components/MultiplayerModal.tsx
+- src/components/SettingsModal.tsx
+- server.ts
+- package.json
+- vite.config.ts
+- PROGRESS.md
+
+Inspect the current versions of these files.
+
+Do not assume earlier progress documentation accurately represents implementation quality.
+
+---
+
+## 2. REQUIRED PRODUCT QUALITY
+
+The final gameplay experience must resemble a professional console-style arcade combat racing game adapted to browsers.
+
+Primary gameplay reference: Blur (2010).
+
+Study:
+
+- Realistic sports-car proportions.
+- Camera placement.
+- Speed perception.
+- Vehicle weight.
+- Cornering.
+- Drifting.
+- Power-up placement.
+- Offensive and defensive combat.
+- Detailed urban environments.
+- Road geometry.
+- Vehicle lighting.
+- Race HUD.
+- Visual readability.
+- AI racing behavior.
+- Audio.
+- Multiplayer competition.
+
+Reproduce the underlying gameplay principles with original assets.
+
+Do not copy proprietary game files, logos, music, meshes or track geometry.
+
+Do not confuse neon colors with professional racing-game quality.
+
+---
+
+## 3. IMMEDIATE DEVELOPMENT FREEZE
+
+Stop adding:
+
+- More vehicle catalog entries.
+- More low-quality tracks.
+- Decorative screens.
+- Fake online features.
+- Additional currency systems.
+- Shop items.
+- Cosmetic dashboards.
+- Empty career events.
+
+The existing five vehicles and three tracks are sufficient for now.
+
+Focus on improving one complete professional race experience.
+
+Quality is more important than quantity.
+
+---
+
+# STAGE 0 — BASELINE AUDIT
+
+## 4. EXECUTE THE EXISTING PROJECT
+
+Inspect package.json and the existing lockfile.
+
+Install dependencies using the compatible package manager and existing lockfile.
+
+Run:
+
+- TypeScript validation.
+- Production build.
+- Existing gameplay tests.
+- Development preview.
+- Browser console inspection.
+- Asset-loading inspection.
+
+Add a proper test script to package.json using the existing Node test runner and tsx where compatible.
+
+Suggested scripts:
+
+```json
+{
+  "test": "tsx --test src/game/gameLogic.test.ts",
+  "typecheck": "tsc --noEmit",
+  "build": "vite build"
+}
+```
+
+Validate actual compatibility before modifying scripts.
+
+Do not fabricate test results.
+
+Record:
+
+- Current branch.
+- Current commit.
+- Current source structure.
+- Existing test results.
+- Actual browser behavior.
+- Known defects.
+- Existing performance.
+
+Create docs/BASELINE_AUDIT.md.
+
+Immediately continue implementation after the audit.
+
+---
+
+# STAGE 1 — PROFESSIONAL 3D VEHICLE ASSETS
+
+## 5. PRIMARY FILE: src/engine/vehicleMesh.ts
+
+The current vehicle generator relies heavily on:
+
+- ExtrudeGeometry.
+- BoxGeometry.
+- CylinderGeometry.
+- Primitive roof caps.
+- Primitive fenders.
+- Primitive air intakes.
+- Primitive side skirts.
+- Primitive lighting geometry.
+
+This produces a procedural prototype rather than a production-quality automotive asset.
+
+Do not continue improving the vehicle by simply adding more boxes.
+
+Create a production-oriented vehicle asset architecture.
+
+Preferred approach:
+
+- Original or appropriately licensed detailed GLB/glTF vehicle assets.
+- Three.js GLTFLoader.
+- Separate wheel nodes.
+- Proper model scale.
+- Physically based materials.
+- Configurable paint.
+- Optimized texture maps.
+- Consistent orientation.
+- Shared vehicle resource caching.
+- LOD support.
+
+If professional assets are unavailable, create a genuinely sculpted original procedural mesh using custom BufferGeometry, curved surface profiles and carefully designed topology.
+
+Do not present fallback primitive geometry as a completed production model.
+
+Do not claim imported professional models exist unless actual model files are present and loaded.
+
+---
+
+## 6. VEHICLE VISUAL ACCEPTANCE CRITERIA
+
+The first completed sports car must have:
+
+- Believable automotive proportions.
+- Sculpted curved body surfaces.
+- Proper wheel arches.
+- Realistic roof curvature.
+- Windshield.
+- Side windows.
+- Rear window.
+- Separate doors.
+- Hood.
+- Front bumper.
+- Rear bumper.
+- Side mirrors.
+- Headlights.
+- Tail lights.
+- Brake lights.
+- Correctly positioned wheels.
+- Tire tread or believable tire material.
+- Detailed rims.
+- Visible brake discs.
+- Exhaust outlets.
+- Appropriate aerodynamic components.
+- Panel seams.
+- Original vehicle identity.
+
+The wheels must not intersect body panels incorrectly.
+
+The roof must not resemble a rectangular slab.
+
+The vehicle body must not resemble a rectangular box.
+
+The vehicle must look convincing from:
+
+1. Front.
+2. Rear.
+3. Side.
+4. Three-quarter view.
+5. Garage camera.
+6. Gameplay chase camera.
+
+Capture actual runtime views when tools support screenshots.
+
+---
+
+## 7. VEHICLE RESOURCE STRUCTURE
+
+Create an asset-oriented structure compatible with the existing application:
+
+```text
+public/assets/
+  vehicles/
+    street-falcon/
+      model.glb
+      textures/
+      manifest.json
+    night-viper/
+    phantom-x/
+  environments/
+  tracks/
+  materials/
+  audio/
+  effects/
+```
+
+Create this structure only for actual assets.
+
+Do not create empty files and mark the asset system complete.
+
+Every asset must have a source and license record.
+
+Maintain ASSET_MANIFEST.md.
+
+Do not hotlink unreliable external asset URLs.
+
+Do not use unknown-license commercial assets.
+
+---
+
+## 8. VEHICLE MATERIALS
+
+Replace inadequate visual materials.
+
+Use:
+
+- MeshPhysicalMaterial for car paint where appropriate.
+- Metallic base.
+- Clear coat.
+- Roughness.
+- Environment reflections.
+- Realistic rubber.
+- Metallic wheel materials.
+- Dark automotive glass.
+- Headlight emissive materials.
+- Brake-light emissive materials.
+- Normal maps when available.
+- Material variation across body components.
+
+Avoid:
+
+- Excessive emissive vehicle bodies.
+- Flat plastic appearance.
+- Overly bright neon underglow.
+- Incorrect glass transparency.
+- Completely black car bodies.
+- Unrealistic mirror-like asphalt and paint.
+
+The car should be clearly readable during both garage viewing and night racing.
+
+---
+
+## 9. FIRST THREE HIGH-QUALITY VEHICLES
+
+Prioritize:
+
+1. STREET FALCON — balanced sport coupe.
+2. NIGHT VIPER — drifty muscle car.
+3. PHANTOM X — grippy supercar.
+
+Each must have a distinct silhouette and geometry.
+
+Do not count recolors as different models.
+
+Preserve the existing five vehicle definitions, but clearly distinguish production-ready models from prototype assets.
+
+Update src/game/vehicles.ts accordingly.
+
+Add model references, wheel dimensions and collision dimensions.
+
+---
+
+# STAGE 2 — VEHICLE PHYSICS REBUILD
+
+## 10. PRIMARY FILE: src/game/physics.ts
+
+The current physics controller contains:
+
+- Forward and lateral velocity components.
+- Arcade acceleration.
+- Speed-dependent steering.
+- Drift grip.
+- Track projection.
+- Road-boundary position correction.
+- Direct assignment of racer.y from the track sample.
+- Circular car-to-car collision approximations.
+
+This is a useful prototype foundation, but it requires significant improvement.
+
+Do not discard functional physics without establishing a baseline.
+
+Refactor incrementally toward a grounded arcade vehicle simulation.
+
+Evaluate Rapier 3D where supported.
+
+If using a custom physics controller, implement equivalent core behaviors through a stable shared simulation.
+
+Avoid mixing incompatible physics architectures.
+
+---
+
+## 11. REMOVE DIRECT POSITION CORRECTION AS PRIMARY PHYSICS
+
+The existing logic directly projects the car onto the track and clamps its lateral position.
+
+Improve this architecture.
+
+Requirements:
+
+- Use track projection for progress calculation and surface queries.
+- Use physical boundaries for collision response.
+- Resolve penetration using bounded position correction.
+- Preserve momentum.
+- Apply collision impulses.
+- Apply controlled friction.
+- Avoid automatically steering the player along the road after every minor collision.
+
+Recovery may reposition a car only when necessary.
+
+Recovery must use a valid safe checkpoint or approved recovery location.
+
+Do not permit recovery to create race progress.
+
+---
+
+## 12. REAL VEHICLE CONTACT AND SUSPENSION
+
+Implement proper ground contact.
+
+Preferred architecture:
+
+- Four suspension contact points or raycasts.
+- Spring force.
+- Damping force.
+- Ground-normal detection.
+- Wheel contact state.
+- Surface grip.
+- Vehicle pitch.
+- Vehicle roll.
+- Vertical velocity.
+- Airborne state.
+- Landing response.
+
+Track elevation must affect actual vehicle motion.
+
+Do not simply assign the vehicle height to the spline height every frame.
+
+Prevent vehicles from hovering above the road.
+
+Keep visual wheel movement synchronized with suspension state.
+
+---
+
+## 13. COLLISION GEOMETRY
+
+The existing car collision system uses a shared circular collision radius.
+
+Replace or improve it using:
+
+- Oriented bounding boxes.
+- Compound collision shapes.
+- Vehicle-specific length and width.
+- Broad-phase collision detection.
+- Narrow-phase collision detection.
+- Collision normals.
+- Angular impulse.
+- Momentum transfer.
+- Penetration correction.
+
+A sports car must have a different collision footprint from a large muscle car or SUV.
+
+Prevent unrealistic invisible collision gaps.
+
+Use swept collision detection for fast-moving projectiles and vehicles where necessary.
+
+---
+
+## 14. VEHICLE BALANCING
+
+The current Street Falcon has a configured topSpeed of 76 m/s, approximately 274 km/h, with acceleration parameter 39.
+
+Do not assume these values are balanced simply because the game displays high speeds.
+
+Establish actual measured performance.
+
+Initial proposed Street Falcon tuning:
+
+- Mass: approximately 1,380 kg.
+- Top speed: 200–230 km/h without Nitro.
+- 0–100 km/h: approximately 6–8 seconds.
+- Progressive acceleration.
+- Predictable braking distance.
+- Stable high-speed steering.
+- Recoverable drift.
+
+These are initial new-project tuning values.
+
+Tune using gameplay tests.
+
+Higher classes may have substantially higher speeds.
+
+Do not make every class accelerate nearly instantly.
+
+---
+
+## 15. HANDLING QUALITY
+
+Implement:
+
+- Longitudinal grip.
+- Lateral grip.
+- Speed-dependent steering.
+- Tire slip angle.
+- Front and rear grip differences.
+- Weight transfer approximation.
+- Steering responsiveness.
+- Yaw damping.
+- Brake force.
+- Engine drag.
+- Aerodynamic drag.
+- Reverse.
+- Handbrake.
+
+Driving must feel responsive and weighted.
+
+Prevent:
+
+- Instant rotation at zero speed.
+- Frictionless sliding.
+- Artificial speed jumps.
+- Uncontrolled perpetual spinning.
+- Cars automatically rotating toward the road during ordinary steering.
+
+Make Grippy, Drifty, Balanced and Off-road actual simulation differences.
+
+---
+
+## 16. REMOVE NON-BLUR NITRO BEHAVIOR
+
+The current physics file includes passive Nitro activation using drift-charged energy.
+
+This conflicts with the project's primary Blur-inspired tactical inventory design.
+
+For Powered Racing:
+
+- Nitro must be a collected power-up.
+- Nitro occupies one of three inventory slots.
+- Nitro activation consumes the item.
+- Normal activation boosts speed.
+- Backward activation performs an airbrake-style maneuver followed by acceleration.
+
+Remove or disable passive drift-charged Nitro in the default combat racing ruleset.
+
+Do not grant automatic boost merely for ending a drift.
+
+Any additional passive boost mechanic must exist only in a separately configured experimental mode.
+
+---
+
+## 17. FIXED TIMESTEP AND DETERMINISTIC TESTS
+
+Use an independent fixed-step gameplay simulation.
+
+Recommended initial offline simulation frequency: 60 Hz.
+
+Rendering must remain independent.
+
+Verify:
+
+- Identical acceleration over equal simulated time.
+- Consistent braking.
+- Consistent collision behavior.
+- Consistent lap progress.
+- Stable drift.
+- Stable behavior under frame drops.
+
+Test at rendering rates equivalent to:
+
+- 30 FPS.
+- 60 FPS.
+- 120 FPS.
+
+Use seeded random values for repeatable AI and combat tests where appropriate.
+
+---
+
+# STAGE 3 — TRACK AND ENVIRONMENT REBUILD
+
+## 18. PRIMARY FILES
+
+- src/engine/trackMesh.ts
+- src/game/trackMath.ts
+- src/engine/proceduralTextures.ts
+
+The current environment contains instanced box-based buildings.
+
+Instancing is valuable for performance, but uniform box geometry is insufficient for the intended visual quality.
+
+Improve geometry, materials, composition and level design.
+
+Preserve useful optimization techniques.
+
+---
+
+## 19. PROFESSIONAL NEON CITY VERTICAL SLICE
+
+Focus on Neon City first.
+
+Create an original believable city racing environment.
+
+Required track features:
+
+- Wide starting grid.
+- Multiple long straights.
+- Fast sweeping corners.
+- Technical S-bends.
+- Tight hairpin.
+- Road elevation.
+- Tunnel.
+- Underpass.
+- Urban intersections.
+- Clear direction signs.
+- Barriers.
+- Meaningful power-up placement.
+- At least one alternative racing line.
+
+Do not use a simple oval as the finished track.
+
+The track must remain physically continuous.
+
+---
+
+## 20. TRACK MATHEMATICS
+
+The current track representation uses Catmull-Rom sampling with normalized spline parameter t.
+
+Improve distance calculations using arc-length sampling.
+
+Create:
+
+- Distance lookup table.
+- Sample-by-distance function.
+- Accurate distance-to-parameter conversion.
+- Accurate parameter-to-distance conversion.
+- Local track projection.
+- Stable tangent calculation.
+- Surface normal.
+- Curvature.
+- Road width.
+- Elevation.
+- Banking.
+- Checkpoint locations.
+
+Do not assume normalized spline parameter is equivalent to traveled distance.
+
+Update AI look-ahead, spawn placement, pickup placement and race progress to use appropriate distance-based calculations.
+
+Check road curvature and minimum turning radius.
+
+Prevent incorrect track projection near neighboring or crossing road segments.
+
+---
+
+## 21. CHECKPOINT VALIDATION
+
+The current updateRacerCheckpoints function permits advancing one or two checkpoint indices based on a projected track parameter.
+
+Improve this system.
+
+Use:
+
+- Actual checkpoint gate geometry.
+- Previous and current vehicle positions.
+- Swept gate crossing.
+- Required sequential order.
+- Valid crossing direction.
+- Valid route segment.
+- Maximum plausible progress change.
+- Recovery validation.
+
+Do not award lap progress merely because a vehicle enters a nearby spline index.
+
+Add tests for:
+
+- Driving backward through the finish.
+- Skipping checkpoints.
+- Oscillating near a checkpoint.
+- High-speed gate crossing.
+- Recovering near the finish.
+- Teleport attempts.
+- Shortcut routing.
+
+---
+
+## 22. CITY ENVIRONMENT ASSETS
+
+Build an original city kit.
+
+Include:
+
+- Multiple building archetypes.
+- Commercial buildings.
+- Residential buildings.
+- High-rise buildings.
+- Industrial structures.
+- Detailed facades.
+- Recessed windows.
+- Window lighting variation.
+- Rooftop equipment.
+- Balconies.
+- Entrances.
+- Sidewalks.
+- Curbs.
+- Streetlights.
+- Traffic lights.
+- Direction signs.
+- Billboards.
+- Tunnel structures.
+- Guardrails.
+- Concrete barriers.
+- Bridge supports.
+- Vegetation.
+- Distant skyline.
+
+Use original or appropriately licensed assets.
+
+Use instancing, texture atlases and modular building kits.
+
+Do not create a city composed entirely of identical rectangles with glowing windows.
+
+---
+
+## 23. ROAD MATERIALS
+
+Create believable asphalt.
+
+Include:
+
+- Asphalt surface texture.
+- Fine surface variation.
+- Normal or roughness detail.
+- Lane markings.
+- Road-edge markings.
+- Turn arrows.
+- Tire marks.
+- Curbs.
+- Surface transitions.
+- Wet asphalt in appropriate sections.
+
+Use controlled reflections.
+
+Road texture scale must remain consistent with vehicle size.
+
+Avoid excessive texture stretching.
+
+Road markings must follow actual road curvature.
+
+---
+
+## 24. LIGHTING QUALITY
+
+Create cinematic, readable lighting.
+
+Use:
+
+- Environment lighting.
+- Appropriate ambient contribution.
+- Directional lighting.
+- Street illumination.
+- Selective emissive windows.
+- Vehicle headlights.
+- Brake lights.
+- Controlled bloom.
+- Tone mapping.
+- Shadows according to graphics quality.
+
+Nighttime does not mean completely dark.
+
+The player must clearly see:
+
+- Road boundaries.
+- Upcoming corners.
+- Opponents.
+- Power-ups.
+- Hazards.
+- Direction signs.
+
+Do not hide low-detail assets behind excessive darkness or bloom.
+
+---
+
+# STAGE 4 — CAMERA AND SPEED PERCEPTION
+
+## 25. PRIMARY FILES
+
+- src/engine/RaceEngine.ts
+- src/engine/motionBlur.ts
+
+Extract chase-camera functionality into a dedicated module when appropriate.
+
+Suggested file:
+
+src/engine/camera/ChaseCamera.ts
+
+Do not break existing camera modes.
+
+Improve the default Near camera first.
+
+---
+
+## 26. CHASE CAMERA PARAMETERS
+
+Initial proposed tuning:
+
+- Distance behind vehicle: 5–8 meters.
+- Camera height: 2–3.5 meters.
+- Base vertical FOV: 55–65 degrees.
+- Smooth speed-based FOV increase.
+- Controlled acceleration response.
+- Velocity-based look-ahead.
+
+These are starting values, not original Blur constants.
+
+The car should remain visible near the lower center of the screen.
+
+Do not frame the car as a tiny object in the distance.
+
+Implement:
+
+- Spring-damped follow.
+- Position interpolation.
+- Rotation interpolation.
+- Look-ahead smoothing.
+- Drift response.
+- Camera collision avoidance.
+- Impact trauma.
+- Nitro feedback.
+- Recovery reset.
+
+The camera must not snap violently whenever the car changes heading.
+
+---
+
+## 27. MOTION BLUR
+
+The project already includes a motion-blur shader and speed-streak system.
+
+Preserve useful functionality.
+
+Audit:
+
+- Frame-history correctness.
+- Camera rotation response.
+- Speed scaling.
+- Object readability.
+- GPU cost.
+- Mobile behavior.
+- Software-renderer fallback.
+
+Do not use motion blur to conceal a low-quality scene.
+
+Apply subtle, controlled effects.
+
+Motion blur must never make the road unreadable.
+
+Ensure reduced-motion settings actually reduce these effects.
+
+---
+
+# STAGE 5 — RACE ENGINE MODULARIZATION
+
+## 28. PRIMARY FILE: src/engine/RaceEngine.ts
+
+The current RaceEngine is approximately 2,251 lines.
+
+It combines many responsibilities:
+
+- Rendering.
+- Scene setup.
+- Vehicles.
+- Track.
+- Camera.
+- Input.
+- Combat.
+- Particles.
+- Race state.
+- HUD.
+- Networking.
+
+Refactor gradually.
+
+Suggested modules:
+
+```text
+src/engine/
+  RaceEngine.ts
+  rendering/
+    Renderer.ts
+    LightingSystem.ts
+    PostProcessing.ts
+  camera/
+    ChaseCamera.ts
+  vehicles/
+    VehicleAssetLoader.ts
+    VehicleVisualController.ts
+  tracks/
+    TrackSceneBuilder.ts
+  effects/
+    ParticleSystem.ts
+    CombatVFX.ts
+  audio/
+    AudioManager.ts
+src/game/
+  simulation/
+    RaceSimulation.ts
+    VehicleSimulation.ts
+    CombatSimulation.ts
+    RaceDirector.ts
+    CheckpointSystem.ts
+    PickupSystem.ts
+    DamageSystem.ts
+```
+
+The existing RaceEngine should become an orchestration layer.
+
+Move gameplay rules out of rendering code.
+
+Do not perform a destructive all-at-once rewrite.
+
+Maintain compatibility through controlled interfaces.
+
+Run regression tests after each extraction.
+
+---
+
+# STAGE 6 — BOT INTELLIGENCE
+
+## 29. PRIMARY FILE: src/game/ai.ts
+
+The current AI uses:
+
+- Spline look-ahead.
+- Lane variation.
+- Nearby power-up seeking.
+- Hazard avoidance.
+- Overtaking.
+- Difficulty profiles.
+- Rubber-banding.
+
+Preserve useful logic.
+
+Improve weaknesses through measurable testing.
+
+---
+
+## 30. AI IMPROVEMENTS
+
+Implement:
+
+- Arc-length look-ahead.
+- Curvature-based safe speeds.
+- Braking distance calculation.
+- Corner entry planning.
+- Corner exit acceleration.
+- Persistent lane decisions.
+- Safe overtaking.
+- Collision prediction.
+- Opponent awareness.
+- Recovery behavior.
+- Combat prioritization.
+- Defensive reaction delay.
+
+Do not select unrelated random lane targets every frame.
+
+Use stable decision intervals.
+
+Use seeded random values for repeatable tests.
+
+Rubber-banding must not grant impossible top speeds or acceleration.
+
+Difficulty should primarily influence actual driving skill and combat decisions.
+
+---
+
+## 31. BOT ACCEPTANCE TEST
+
+Run a complete simulated race with seven bots.
+
+Verify:
+
+- All bots remain on valid track geometry.
+- All bots pass checkpoints in sequence.
+- Bots can overtake.
+- Bots brake before corners.
+- Bots can recover.
+- Bots can collect power-ups.
+- Bots can activate combat abilities.
+- Bots can defend themselves.
+- Bots finish the race.
+
+Record finish times, collisions, recovery counts and checkpoint failures.
+
+Do not mark AI complete based only on visible movement.
+
+---
+
+# STAGE 7 — BLUR COMBAT REFINEMENT
+
+## 32. PRIMARY FILES
+
+- src/game/powerups.ts
+- src/game/combatResolver.ts
+- src/engine/RaceEngine.ts
+- src/components/PowerUpIcon.tsx
+- src/components/HudOverlay.tsx
+
+The eight power-up categories already exist.
+
+Do not implement duplicate versions.
+
+Audit their actual behavior and improve gameplay feel.
+
+---
+
+## 33. REQUIRED POWER-UP BEHAVIOR
+
+### SHUNT
+
+Forward homing projectile.
+
+Backward non-homing projectile.
+
+Must be:
+
+- Visible.
+- Avoidable.
+- Interceptable.
+- Physically impactful.
+- Clearly announced to the targeted player.
+
+### BOLT
+
+One pickup provides three individual shots.
+
+Each shot:
+
+- Travels independently.
+- Has projectile collision.
+- Can fire forward or backward.
+- Updates ammunition.
+
+### BARGE
+
+Radial shockwave around the vehicle.
+
+Must physically push nearby opponents and destroy supported incoming projectiles and nearby mines.
+
+### MINE
+
+Deploy behind or throw forward.
+
+Must be visible, avoidable, destructible where configured and physically relevant.
+
+### SHOCK
+
+Create three avoidable electrical hazards ahead of the race leader.
+
+Placement must use actual distance-based track progress.
+
+### SHIELD
+
+Actual defensive energy barrier.
+
+Protects according to explicit combat rules.
+
+Has duration and absorption capacity.
+
+### NITRO
+
+Collected inventory item.
+
+Forward activation produces temporary acceleration.
+
+Backward activation performs the airbrake maneuver followed by boost.
+
+### REPAIR
+
+Restore missing segmented health.
+
+Initial proposed repair capacity: four health blocks.
+
+Never exceed vehicle maximum durability.
+
+Update visible damage.
+
+---
+
+## 34. COMBAT COUNTERPLAY
+
+Use one shared interaction resolver.
+
+Test:
+
+- Shunt versus Shield.
+- Shunt versus Barge.
+- Shunt versus reverse Shunt.
+- Shunt versus Mine.
+- Two Bolt hits versus Shunt.
+- Bolt versus Shield.
+- Bolt versus Barge.
+- Mine versus Barge.
+- Shock versus Shield.
+
+Exact interaction values are configurable new-game balancing decisions.
+
+Do not describe unverified community observations as confirmed original Blur implementation details.
+
+---
+
+## 35. POWER-UP VISUAL QUALITY
+
+Create distinct three-dimensional pickup designs.
+
+Do not use simple glowing cubes.
+
+Every power-up must have:
+
+- Unique silhouette.
+- Original icon.
+- Energy animation.
+- Pickup effect.
+- Activation effect.
+- Impact effect.
+- Expiration behavior.
+- Distinct audio.
+
+Keep visual effects readable during high-speed racing.
+
+Do not make every ability look like the same colored sphere.
+
+Use a consistent visual identity across world pickups and HUD icons.
+
+---
+
+# STAGE 8 — PROFESSIONAL HUD AND UI
+
+## 36. PRIMARY FILES
+
+- HudOverlay.tsx
+- GarageDock.tsx
+- MainMenuOverlay.tsx
+- RaceSetupModal.tsx
+- PauseResultsModals.tsx
+- SettingsModal.tsx
+
+Improve the game interface without turning it into a generic SaaS dashboard.
+
+---
+
+## 37. GAMEPLAY HUD
+
+Requirements:
+
+- Race position.
+- Total opponents.
+- Lap count.
+- Race timer.
+- Mini-map.
+- Three power-up slots.
+- Selected slot.
+- Bolt ammunition.
+- Segmented vehicle health.
+- Incoming attack warning.
+- Reputation.
+- Combo.
+- Challenge progress.
+- Speed.
+- Gear.
+- Network latency when connected.
+
+The HUD must not obscure the road.
+
+Use actual simulation values.
+
+Remove decorative information that does not help racing.
+
+Use clear original iconography.
+
+Avoid excessive panels and text.
+
+---
+
+## 38. GARAGE
+
+The garage must use the same high-quality vehicle model that appears in gameplay.
+
+Implement:
+
+- Real-time 3D preview.
+- Vehicle rotation.
+- Orbit camera.
+- Professional studio lighting.
+- Paint customization.
+- Wheel customization.
+- Vehicle statistics.
+- Actual handling archetype.
+- Unlock state.
+- Original visual presentation.
+
+Do not use a separate generated image to hide poor gameplay models.
+
+---
+
+## 39. MOBILE CONTROLS
+
+Audit src/engine/input.ts and mobile HUD controls.
+
+Use actual multi-touch handling.
+
+Support simultaneous:
+
+- Steering.
+- Acceleration.
+- Braking.
+- Handbrake.
+- Power-up activation.
+
+Handle pointer cancellation and browser focus loss.
+
+Ensure the device can use forward and backward power-up activation.
+
+Keep touch controls inside screen safe areas.
+
+Do not block the road with oversized controls.
+
+Test at landscape resolutions.
+
+---
+
+# STAGE 9 — CRITICAL MULTIPLAYER REBUILD
+
+## 40. PRIMARY FILES
+
+- server.ts
+- src/net/multiplayerClient.ts
+- src/engine/RaceEngine.ts
+- src/App.tsx
+
+The current multiplayer implementation accepts client-generated racer_state messages.
+
+The client sends:
+
+- x.
+- z.
+- heading.
+- speed.
+- hp.
+- lap.
+- totalProgress.
+- shieldTimer.
+- nitroTimer.
+- destroyed.
+
+The server clamps some numeric values and rebroadcasts them.
+
+THIS IS NOT SERVER-AUTHORITATIVE GAMEPLAY.
+
+It allows clients to influence authoritative race state.
+
+The current combat_use messages are also rebroadcast without a complete server-side inventory and combat simulation.
+
+Replace this architecture.
+
+---
+
+## 41. NEW AUTHORITATIVE PROTOCOL
+
+Clients must send input commands rather than authoritative state.
+
+Suggested input message:
+
+```typescript
+interface PlayerInputMessage {
+  type: "input";
+  sequence: number;
+  throttle: number;
+  brake: number;
+  steering: number;
+  handbrake: boolean;
+  selectedSlot: number;
+  activatePowerUp: boolean;
+  rearFire: boolean;
+  recover: boolean;
+}
+```
+
+Validate:
+
+- Message structure.
+- Finite numbers.
+- Input ranges.
+- Sequence progression.
+- Rate limits.
+- Valid session.
+- Valid room.
+- Valid race state.
+
+Reject malformed and unauthorized messages.
+
+---
+
+## 42. SERVER RACE SIMULATION
+
+Create a shared simulation architecture independent of Three.js and browser APIs.
+
+Suggested structure:
+
+```text
+server/
+  GameServer.ts
+  RaceRoom.ts
+  RoomManager.ts
+  AuthoritativeRace.ts
+  InputValidator.ts
+  SnapshotPublisher.ts
+  SessionManager.ts
+shared/
+  simulation/
+  protocol/
+  validation/
+```
+
+The server controls:
+
+- Race clock.
+- Vehicle movement.
+- Vehicle collisions.
+- Power-up collection.
+- Inventory.
+- Projectile creation.
+- Projectile collisions.
+- Damage.
+- Shield.
+- Nitro.
+- Repair.
+- Wreck.
+- Recovery.
+- Checkpoints.
+- Lap progress.
+- Finish order.
+- Rewards.
+
+Use configurable server simulation frequency.
+
+Initial target: 30 Hz.
+
+Use the same gameplay configuration as the offline simulation.
+
+Do not duplicate incompatible balancing rules.
+
+---
+
+## 43. CLIENT SYNCHRONIZATION
+
+Implement:
+
+- Input prediction.
+- Server reconciliation.
+- Input acknowledgments.
+- Remote vehicle interpolation.
+- Snapshot sequence numbers.
+- Event deduplication.
+- Connection heartbeat.
+- Reconnection.
+- Race session identity.
+
+Do not blindly apply client-supplied remote states as authoritative outcomes.
+
+Client rendering should remain smooth under realistic network latency.
+
+Test two actual independent clients before increasing player count.
+
+---
+
+## 44. WEBSOCKET DEPLOYMENT
+
+The current client connects to:
+
+```typescript
+`${proto}//${window.location.host}/ws`
+```
+
+This assumes the frontend origin also hosts the WebSocket server.
+
+The frontend is currently deployed on Vercel.
+
+Verify the actual production network architecture.
+
+Add environment-based endpoint configuration:
+
+```typescript
+const wsUrl =
+  import.meta.env.VITE_GAME_SERVER_WS_URL ||
+  `${proto}//${window.location.host}/ws`;
+```
+
+Use this only with appropriate validation and deployment configuration.
+
+Also support a configurable backend API base URL.
+
+Create:
+
+- .env.example.
+- Backend health endpoint.
+- WebSocket connection diagnostics.
+- Visible real connection status.
+- Reconnection logic.
+
+If production hosting cannot support the authoritative persistent simulation, retain the Vercel frontend and create a separately deployable Node.js game server.
+
+Do not claim multiplayer works in production until tested.
+
+Do not activate paid infrastructure without approval.
+
+---
+
+# STAGE 10 — SECURITY REPAIR
+
+## 45. PASSWORD SECURITY
+
+Current server.ts contains a password hash using SHA-256 with a fixed salt prefix.
+
+Replace it.
+
+Use:
+
+- Argon2id where supported.
+- Alternatively, Node.js scrypt with a unique random salt.
+- Appropriate work factors.
+- Secure password comparison.
+- Rate-limited authentication.
+- Secure session management.
+
+Implement safe migration for existing development accounts.
+
+Do not silently invalidate all existing accounts.
+
+Do not expose password hashes.
+
+Require reasonable password strength.
+
+---
+
+## 46. SESSION MANAGEMENT
+
+The current registration and login responses return user data.
+
+Implement authenticated sessions.
+
+Use:
+
+- Secure session tokens.
+- Appropriate expiration.
+- Server-side validation.
+- Secure cookie settings where applicable.
+- Logout.
+- Session revocation.
+- Authentication for protected endpoints.
+
+The backend must not trust a username supplied by the client as proof of identity.
+
+---
+
+## 47. LEADERBOARD AND REWARDS
+
+Current /api/race/complete accepts client-supplied username, fanPoints, wins and vehicle values.
+
+This is not a secure authoritative reward system.
+
+Replace it.
+
+Requirements:
+
+- Authenticate the player.
+- Verify the match ID.
+- Verify authoritative race completion.
+- Calculate rewards on the server.
+- Store unique reward transaction IDs.
+- Prevent duplicate reward claims.
+- Reject manually submitted arbitrary score totals.
+
+Offline guest race statistics must remain separate from competitive online leaderboards.
+
+Never allow client-provided wins or fanPoints to directly determine global leaderboard placement.
+
+---
+
+## 48. PERSISTENCE
+
+The current server uses a local JSON file.
+
+Local JSON may be acceptable for development, but it is not production-grade persistence for multiple instances or ephemeral hosting.
+
+Introduce a persistence abstraction.
+
+Support:
+
+- Local development store.
+- Production database adapter.
+- Transactional reward updates.
+- User profiles.
+- Vehicle ownership.
+- Customizations.
+- Race history.
+- Leaderboards.
+- Progression.
+- Session records.
+
+Use PostgreSQL or Firestore according to verified environment availability.
+
+Do not provision paid services without authorization.
+
+Document required database configuration.
+
+Do not report production persistence as complete when only localStorage or a local JSON file exists.
+
+---
+
+# STAGE 11 — PERFORMANCE
+
+## 49. PERFORMANCE PROFILING
+
+Measure actual performance.
+
+Collect:
+
+- Average FPS.
+- 1% low FPS.
+- Frame-time percentiles.
+- CPU simulation time.
+- Draw calls.
+- Triangle count.
+- Memory usage where measurable.
+- Asset loading time.
+- Shader compilation time.
+- Network bandwidth.
+- Server tick duration.
+
+Record hardware, browser, viewport and graphics settings.
+
+Never invent performance metrics.
+
+---
+
+## 50. RENDERING OPTIMIZATION
+
+Implement or improve:
+
+- Model caching.
+- Shared geometry.
+- Shared materials.
+- Instancing.
+- LOD.
+- Texture compression.
+- Mesh compression.
+- Object pooling.
+- Particle pooling.
+- Frustum culling.
+- Distance-based environment rendering.
+- Adaptive render resolution.
+- Selective post-processing.
+- Resource disposal.
+
+Preserve high-quality vehicle visuals near the camera.
+
+Reduce distant environment complexity.
+
+Do not reduce every asset to primitive geometry for optimization.
+
+---
+
+## 51. PWA ASSET CACHING
+
+The current Vite PWA configuration caches selected static file types.
+
+When adding GLB/glTF models, compressed textures or audio assets, update caching rules appropriately.
+
+Review:
+
+- GLB.
+- glTF.
+- BIN.
+- KTX2.
+- WebP.
+- Audio files.
+- Maximum cache file size.
+- Versioned asset paths.
+- Offline fallback.
+
+Do not automatically cache an unlimited asset collection.
+
+Keep loading and memory budgets realistic.
+
+---
+
+# STAGE 12 — MANDATORY TESTING
+
+## 52. EXTEND EXISTING TEST SUITE
+
+Primary file:
+
+src/game/gameLogic.test.ts
+
+Preserve valid existing tests.
+
+Improve weak assertions.
+
+Add tests for:
+
+- Frame-rate-independent physics.
+- Realistic acceleration.
+- Braking distance.
+- Steering.
+- Drift recovery.
+- Vehicle-specific collision geometry.
+- Road contact.
+- Suspension.
+- Valid recovery.
+- Accurate distance-based track sampling.
+- Reverse checkpoint crossing.
+- Checkpoint skipping.
+- Lap completion.
+- Race ranking.
+- Bot race completion.
+- All eight power-ups.
+- Three-slot inventory.
+- Projectile interception.
+- Shield damage.
+- Nitro airbrake.
+- Repair limits.
+- Authoritative server simulation.
+- Invalid client commands.
+- Unauthorized reward submission.
+- Duplicate reward claims.
+
+Run tests before reporting completion.
+
+---
+
+## 53. RUNTIME QUALITY CHECKS
+
+The improved version must pass actual browser gameplay checks:
+
+1. Main menu loads.
+2. Quick Race starts.
+3. Professional car model appears.
+4. Wheels touch the ground.
+5. Wheels rotate correctly.
+6. Front wheels steer.
+7. Acceleration feels controlled.
+8. Braking works.
+9. Drift is controllable.
+10. Camera follows smoothly.
+11. Road geometry is continuous.
+12. Car collides with barriers.
+13. Seven bots complete the race.
+14. Checkpoints are valid.
+15. Laps count correctly.
+16. All power-ups work.
+17. Opponents can defend themselves.
+18. Race results appear.
+19. Restart works.
+20. Mobile multi-touch works.
+21. Multiplayer works between real clients when the backend is available.
+22. Invalid client state manipulation is rejected.
+23. Repeated races do not continuously leak memory.
+
+Use actual runtime evidence.
+
+If a test is unavailable, mark it NOT TESTED.
+
+---
+
+# STAGE 13 — VISUAL ACCEPTANCE
+
+## 54. BEFORE AND AFTER COMPARISON
+
+Capture actual screenshots where supported:
+
+- Existing car model.
+- Improved car model.
+- Existing garage.
+- Improved garage.
+- Existing road.
+- Improved road.
+- Existing gameplay.
+- Improved gameplay.
+- Combat effects.
+- Mobile gameplay.
+
+Compare using equivalent camera positions and graphics settings where possible.
+
+Do not generate concept images and present them as actual game screenshots.
+
+A successful Vite build is not evidence of visual quality.
+
+---
+
+## 55. QUALITY SCORECARD
+
+Evaluate the running product.
+
+| Category | Maximum |
+|---|---:|
+| Vehicle model | 15 |
+| Driving physics | 20 |
+| Track and environment | 15 |
+| Camera and speed | 10 |
+| Power-up combat | 15 |
+| Opponent intelligence | 10 |
+| Audio and feedback | 5 |
+| HUD and controls | 5 |
+| Performance and stability | 5 |
+
+Total: 100.
+
+Require observable evidence for each score.
+
+Do not award automatic maximum points.
+
+Unverified categories must remain unverified.
+
+The target for the polished vertical slice is at least 85/100, subject to real evaluation rather than self-declared scores.
+
+---
+
+# STAGE 14 — LONG-TERM PRODUCT
+
+## 56. PRESERVE THE FULL PROJECT VISION
+
+After the vertical slice passes quality gates, expand toward:
+
+- 52 original vehicles.
+- Four vehicle classes.
+- Four handling archetypes.
+- 14 original locations.
+- 32 racing routes.
+- Four combat arenas.
+- Nine career groups.
+- Rival battles.
+- Fans-inspired reputation.
+- Lights-inspired career progression.
+- Fan Run-inspired gate challenges.
+- Fan Demand-inspired objectives.
+- Eight power-up categories.
+- Three equipped multiplayer Mods.
+- Online ranks 1–50.
+- Ten optional prestige tiers.
+- Up to 20 real online players.
+- Mobile and desktop support.
+- PWA.
+- English, Uzbek and Russian localization.
+
+These are project targets, not claims about completed functionality.
+
+Do not create low-quality content merely to reach numeric targets.
+
+---
+
+# STAGE 15 — EXECUTION CONTRACT
+
+## 57. REQUIRED DEVELOPMENT ORDER
+
+Complete work in this order:
+
+1. Existing project audit.
+2. Professional vehicle assets.
+3. Vehicle physics.
+4. Chase camera.
+5. Track geometry.
+6. City environment.
+7. Race progress validation.
+8. AI racing.
+9. Combat refinement.
+10. HUD and mobile controls.
+11. Authoritative multiplayer.
+12. Authentication and database security.
+13. Performance optimization.
+14. Full content expansion.
+
+Keep the game playable after every significant milestone.
+
+Do not advance based solely on generated source files.
+
+---
+
+## 58. REPOSITORY RULES
+
+Preserve:
+
+- Existing Git history.
+- Existing working code.
+- Existing user data.
+- Existing assets.
+- Existing deployment configuration.
+
+Create a recoverable checkpoint before significant refactoring where supported.
+
+Do not force-push.
+
+Do not overwrite unrelated changes.
+
+Do not expose secrets.
+
+Do not deploy untested changes to production.
+
+Do not create another unrelated repository.
+
+---
+
+## 59. REQUIRED DOCUMENTATION
+
+Maintain:
+
+- docs/BASELINE_AUDIT.md
+- docs/ARCHITECTURE.md
+- docs/VEHICLE_PHYSICS.md
+- docs/ASSET_MANIFEST.md
+- docs/COMBAT_BALANCING.md
+- docs/MULTIPLAYER_PROTOCOL.md
+- docs/SECURITY_REPORT.md
+- docs/PERFORMANCE_REPORT.md
+- docs/TEST_REPORT.md
+- PROGRESS.md
+- CHANGELOG.md
+- README.md
+
+Documentation must reflect actual implementation.
+
+Do not spend the whole development session writing documents.
+
+Implementation is the primary deliverable.
+
+---
+
+## 60. FINAL INSTRUCTIONS
+
+Stop treating NEON RIVALS as a simple browser racing prototype.
+
+The product owner expects a professional Blur-inspired arcade combat racing game.
+
+The current project already has enough basic features.
+
+The problem is implementation quality.
+
+Your immediate assignment:
+
+- Inspect the current repository.
+- Run the existing game.
+- Improve the vehicle model substantially.
+- Rebuild inadequate vehicle physics.
+- Improve the chase camera.
+- Rebuild the road and environment where necessary.
+- Verify actual driving behavior.
+- Preserve the eight power-up systems.
+- Correct the multiplayer architecture.
+- Correct the security vulnerabilities.
+- Run actual tests.
+- Keep the existing deployment functional.
+
+Do not return only another development plan.
+
+Do not add more placeholder systems.
+
+Do not describe unverified functionality as complete.
+
+Do not use screenshots, concept artwork or menu redesigns as substitutes for gameplay.
+
+If an important asset or runtime capability is unavailable, report the exact blocker and continue all feasible improvements.
+
+START MODIFYING THE EXISTING PROJECT NOW.
+
+FIRST PRIORITY:
+
+PROFESSIONAL VEHICLE MODEL + GROUNDED VEHICLE PHYSICS + PROFESSIONAL CHASE CAMERA + COMPLETE URBAN TRACK.
+
+GAMEPLAY QUALITY IS THE PRIMARY ACCEPTANCE CRITERION.

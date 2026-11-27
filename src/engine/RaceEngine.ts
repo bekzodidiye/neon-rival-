@@ -62,6 +62,7 @@ import {
   createCameraSpeedStreakRig,
   type CameraSpeedStreakRig,
 } from './motionBlur';
+import { ChaseCameraController } from './camera/ChaseCamera';
 
 export type EngineMode = 'title' | 'garage' | 'playing' | 'paused' | 'results';
 
@@ -245,10 +246,14 @@ export class RaceEngine {
   private lastCountdownInt = 4;
   private raceTime = 0;
   private hitstopTimer = 0;
-  private cameraTrauma = 0;
+  private chaseCamera = new ChaseCameraController();
+  private reducedMotion =
+    typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+      ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      : false;
   private cameraMode: CameraMode = 'near';
-  private currentCamPos = new THREE.Vector3(0, 6, -12);
-  private currentCamLook = new THREE.Vector3(0, 1, 10);
+  private currentCamPos = new THREE.Vector3(0, 3.2, -7.2);
+  private currentCamLook = new THREE.Vector3(0, 1, 12);
   private finalLapShown = false;
   private eliminationTimer = 25;
   private combatFeed: CombatFeedItem[] = [];
@@ -321,11 +326,11 @@ export class RaceEngine {
     this.scene.environmentIntensity = 0.85;
     pmrem.dispose();
 
-    // Cool nocturnal sky/ground fill + angled moonlight rim key light (zero white road washout!)
-    this.hemiLight = new THREE.HemisphereLight(0x3a62b8, 0x120924, 0.42);
+    // Readable metropolitan night sky/ground fill + cross-angled moonlight key light
+    this.hemiLight = new THREE.HemisphereLight(0x5a7ec8, 0x1b2234, 0.68);
     this.scene.add(this.hemiLight);
 
-    this.keyLight = new THREE.DirectionalLight(0x9ec5ff, 0.68);
+    this.keyLight = new THREE.DirectionalLight(0xcfe0ff, 1.15);
     this.keyLight.position.set(88, 56, -52);
     this.keyLight.castShadow = !this.isSoftwareGl;
     this.keyLight.shadow.mapSize.set(1024, 1024);
@@ -455,6 +460,15 @@ export class RaceEngine {
     halo.position.set(0, 0.08, 0);
     this.garageGroup.add(halo);
 
+    // Subtle localized showcase key & cool rim lights inside garageGroup (active only in Title/Garage)
+    const stageKey = new THREE.PointLight(0xdcebff, 28, 18, 1.6);
+    stageKey.position.set(4.8, 3.8, 4.6);
+    this.garageGroup.add(stageKey);
+
+    const stageRim = new THREE.PointLight(0x38bdf8, 18, 16, 1.7);
+    stageRim.position.set(-5.2, 2.8, -4.4);
+    this.garageGroup.add(stageRim);
+
     // Position garage turntable slightly ahead of start gantry on the wet Neon City straight
     const s = sampleTrackAt(this.currentTrack, 0.985);
     this.garageGroup.position.set(s.x, s.y + 0.02, s.z);
@@ -493,6 +507,10 @@ export class RaceEngine {
       this.textures.neonGlow,
       this.textures.headlightBeam,
       this.textures.tailTrail,
+      {
+        dimensions: cfg.dimensions,
+        handlingArchetype: cfg.handlingArchetype,
+      },
     );
     this.garageHeroRig.root.position.set(0, 0.07, 0);
     this.garageGroup.add(this.garageHeroRig.root);
@@ -734,6 +752,11 @@ export class RaceEngine {
         aiLaneTimer: 1 + idx * 0.3,
         aiDecisionTimer: 2.2 + idx * 0.4,
         aiAggression: 0.45 + (idx % 3) * 0.2,
+        vy: 0,
+        grounded: true,
+        airborneTime: 0,
+        suspCompression: [0, 0, 0, 0],
+        lastSafeTrackT: spawn.trackT,
       };
 
       const rig = buildVehicleRig(
@@ -744,6 +767,10 @@ export class RaceEngine {
         this.textures.neonGlow,
         this.textures.headlightBeam,
         this.textures.tailTrail,
+        {
+          dimensions: carDef.dimensions,
+          handlingArchetype: carDef.handlingArchetype,
+        },
       );
       rig.root.position.set(state.x, state.y, state.z);
       rig.root.rotation.y = state.heading;
@@ -752,13 +779,12 @@ export class RaceEngine {
       return state;
     });
 
-    // Position chase camera smoothly behind the player immediately on race start
+    // Position dedicated ChaseCamera smoothly behind the player immediately on race start
     const player = this.getPlayerRacer();
     if (player) {
-      const fwdX = Math.sin(player.heading);
-      const fwdZ = Math.cos(player.heading);
-      this.currentCamPos.set(player.x - fwdX * 8.4, player.y + 3.55, player.z - fwdZ * 8.4);
-      this.currentCamLook.set(player.x + fwdX * 18, player.y + 0.85, player.z + fwdZ * 18);
+      this.chaseCamera.reset(player);
+      this.currentCamPos.copy(this.chaseCamera.currentPos);
+      this.currentCamLook.copy(this.chaseCamera.currentLook);
       this.camera.position.copy(this.currentCamPos);
       this.camera.lookAt(this.currentCamLook);
     }
@@ -768,7 +794,7 @@ export class RaceEngine {
     this.lastCountdownInt = 4;
     this.raceTime = 0;
     this.hitstopTimer = 0;
-    this.cameraTrauma = 0;
+    this.chaseCamera.trauma = 0;
     this.finalLapShown = false;
     this.eliminationTimer = 25;
     this.combatFeed = [];
@@ -1141,7 +1167,7 @@ export class RaceEngine {
             racer.hp = Math.max(5, racer.hp - Math.round(physEvents.wallHitIntensity * 6));
           }
           if (racer.isPlayer) {
-            this.cameraTrauma = Math.min(1, this.cameraTrauma + physEvents.wallHitIntensity * 0.45);
+            this.chaseCamera.addTrauma(physEvents.wallHitIntensity * 0.45);
             this.audio.playImpact(physEvents.wallHitIntensity > 0.65);
           }
         }
@@ -1190,7 +1216,7 @@ export class RaceEngine {
       for (const imp of carImpacts) {
         this.spawnBurst(imp.x, 0.8, imp.z, 8, 0xffd166, 12);
         if (imp.aId === 'player_local' || imp.bId === 'player_local') {
-          this.cameraTrauma = Math.min(1, this.cameraTrauma + imp.pairImpact * 0.55);
+          this.chaseCamera.addTrauma(imp.pairImpact * 0.55);
           this.audio.playImpact(imp.pairImpact > 0.55);
         }
       }
@@ -1267,14 +1293,14 @@ export class RaceEngine {
           resolveNitroAirBrake(owner);
           this.spawnBurst(owner.x + fwdX * 2.2, owner.y + 0.6, owner.z + fwdZ * 2.2, 16, 0x25f4a0, 12);
           if (owner.isPlayer) {
-            this.cameraTrauma = Math.min(1, this.cameraTrauma + 0.24);
+            this.chaseCamera.addTrauma(0.24);
             this.awardFans(owner, 75, 'AIR-BRAKE BOOST', '#25F4A0');
           }
         } else {
           const mult = getVehicleById(owner.vehicleId).stats.nitroEfficiency;
           owner.nitroTimer = Math.max(owner.nitroTimer, POWERUP_BALANCE.NITRO_DURATION * mult);
           if (owner.isPlayer) {
-            this.cameraTrauma = Math.min(1, this.cameraTrauma + 0.34);
+            this.chaseCamera.addTrauma(0.34);
             this.awardFans(owner, 50, 'NITRO OVERDRIVE', '#25F4A0');
           }
         }
@@ -1584,7 +1610,7 @@ export class RaceEngine {
       this.audio.playImpact(true);
       if (destroyed) {
         this.hitstopTimer = 0.065;
-        this.cameraTrauma = Math.min(1, this.cameraTrauma + 0.9);
+        this.chaseCamera.addTrauma(0.9);
         if (attacker?.isPlayer) {
           this.awardFans(attacker, 300, `WRECKED ${target.name}! +300 FANS`, '#FF2A55');
         } else {
@@ -1592,7 +1618,7 @@ export class RaceEngine {
         }
       } else {
         this.hitstopTimer = 0.035;
-        this.cameraTrauma = Math.min(1, this.cameraTrauma + 0.5);
+        this.chaseCamera.addTrauma(0.5);
         if (attacker?.isPlayer) {
           this.awardFans(attacker, 150, `${weapon} HIT ${target.name} +150 FANS`, POWERUP_DEFS[weapon].color);
         } else {
@@ -1869,9 +1895,14 @@ export class RaceEngine {
       rig.bodyGroup.rotation.x = r.bodyPitch;
       rig.bodyGroup.rotation.z = r.bodyRoll;
 
-      // Wheel spin & front wheel steering
+      // Wheel spin, front wheel steering & 4-wheel suspension travel
       rig.wheelPivots[0].rotation.y = r.steerAngle;
       rig.wheelPivots[1].rotation.y = r.steerAngle;
+      for (let wi = 0; wi < rig.wheelPivots.length; wi++) {
+        const comp = r.suspCompression?.[wi] ?? 0;
+        const baseY = rig.wheelBaseY[wi] ?? 0.36;
+        rig.wheelPivots[wi].position.y = baseY + (comp - 0.16) * 0.14;
+      }
       for (const wm of rig.wheelMeshes) {
         wm.rotation.x = r.wheelSpin;
       }
@@ -1923,54 +1954,17 @@ export class RaceEngine {
   }
 
   private updateRaceCamera(player: RacerState, rearView: boolean, dt: number): void {
-    const fwdX = Math.sin(player.heading);
-    const fwdZ = Math.cos(player.heading);
-    const dir = rearView ? -1 : 1;
-
-    let backDist = this.cameraMode === 'far' ? 11.2 : this.cameraMode === 'hood' ? -0.35 : 8.4;
-    let camHeight = this.cameraMode === 'far' ? 4.6 : this.cameraMode === 'hood' ? 1.48 : 3.55;
-
-    if (rearView) {
-      backDist = -8.4;
-      camHeight = 3.3;
-    }
-
-    // Velocity & drift look-ahead
-    const desiredX = player.x - fwdX * backDist * dir + (rearView ? 0 : -player.lateralSpeed * 0.08);
-    const desiredY = player.y + camHeight;
-    const desiredZ = player.z - fwdZ * backDist * dir;
-
-    const lookDist = this.cameraMode === 'hood' ? 28 : 18;
-    const lookX = player.x + fwdX * lookDist * dir;
-    const lookY = player.y + (this.cameraMode === 'hood' ? 1.15 : 0.85);
-    const lookZ = player.z + fwdZ * lookDist * dir;
-
-    if (this.cameraMode === 'hood' || rearView) {
-      this.currentCamPos.set(desiredX, desiredY, desiredZ);
-      this.currentCamLook.set(lookX, lookY, lookZ);
-    } else {
-      const posDamp = 1 - Math.exp(-9.5 * dt);
-      const lookDamp = 1 - Math.exp(-12.5 * dt);
-      _vecA.set(desiredX, desiredY, desiredZ);
-      _vecB.set(lookX, lookY, lookZ);
-      this.currentCamPos.lerp(_vecA, posDamp);
-      this.currentCamLook.lerp(_vecB, lookDamp);
-    }
-
-    // Decaying trauma^2 impact & nitro shake
-    this.cameraTrauma = Math.max(0, this.cameraTrauma - dt * 1.9);
-    const shakeAmp = this.cameraTrauma * this.cameraTrauma * 0.6 + (player.nitroTimer > 0 ? 0.045 : 0);
-    const shakeX = (Math.random() - 0.5) * shakeAmp;
-    const shakeY = (Math.random() - 0.5) * shakeAmp;
-
-    this.camera.position.set(this.currentCamPos.x + shakeX, this.currentCamPos.y + shakeY, this.currentCamPos.z);
-    this.camera.lookAt(this.currentCamLook);
-
-    // Speed-based + Nitro FOV expansion
-    const speedRatio = Math.min(1.2, Math.abs(player.speed) / 78);
-    const targetFov = 60 + speedRatio * 15 + (player.nitroTimer > 0 ? 10 : 0);
-    this.camera.fov += (targetFov - this.camera.fov) * (1 - Math.exp(-6 * dt));
-    this.camera.updateProjectionMatrix();
+    this.chaseCamera.update(
+      this.camera,
+      player,
+      this.currentTrack,
+      this.cameraMode,
+      rearView,
+      this.reducedMotion,
+      dt,
+    );
+    this.currentCamPos.copy(this.chaseCamera.currentPos);
+    this.currentCamLook.copy(this.chaseCamera.currentLook);
   }
 
   private spawnParticle(

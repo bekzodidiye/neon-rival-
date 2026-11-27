@@ -7,7 +7,8 @@ import type {
   TrackPickupNode,
 } from './types';
 import type { BuiltTrack } from './trackMath';
-import { forwardTrackDistance, normalizeT, sampleTrackAt } from './trackMath';
+import { forwardTrackDistance, sampleTrackAt, sampleTrackByDistance, tToDistance } from './trackMath';
+import { getVehicleById } from './vehicles';
 
 interface DifficultyProfile {
   speedScale: number;
@@ -19,31 +20,31 @@ interface DifficultyProfile {
 
 const DIFFICULTY_PROFILES: Record<Difficulty, DifficultyProfile> = {
   easy: {
-    speedScale: 0.84,
+    speedScale: 0.85,
     cornerCaution: 1.25,
-    combatFrequency: 2.6,
+    combatFrequency: 2.5,
     shieldReactionChance: 0.35,
-    pickupSeekWeight: 0.45,
+    pickupSeekWeight: 0.5,
   },
   normal: {
     speedScale: 0.94,
     cornerCaution: 1.0,
-    combatFrequency: 1.65,
-    shieldReactionChance: 0.65,
-    pickupSeekWeight: 0.72,
+    combatFrequency: 1.55,
+    shieldReactionChance: 0.68,
+    pickupSeekWeight: 0.78,
   },
   hard: {
     speedScale: 1.0,
-    cornerCaution: 0.85,
-    combatFrequency: 1.15,
+    cornerCaution: 0.88,
+    combatFrequency: 1.1,
     shieldReactionChance: 0.85,
-    pickupSeekWeight: 0.9,
+    pickupSeekWeight: 0.92,
   },
   expert: {
-    speedScale: 1.04,
-    cornerCaution: 0.75,
-    combatFrequency: 0.8,
-    shieldReactionChance: 0.95,
+    speedScale: 1.03,
+    cornerCaution: 0.8,
+    combatFrequency: 0.82,
+    shieldReactionChance: 0.94,
     pickupSeekWeight: 1.0,
   },
 };
@@ -59,7 +60,9 @@ export const AI_DRIVER_NAMES = [
 ];
 
 /**
- * Compute natural arcade racing + tactical combat inputs for an AI opponent.
+ * Compute grounded arcade racing + tactical combat inputs for an AI opponent (V5.0 Stage 6).
+ * Uses arc-length look-ahead, curvature-based corner braking distance, persistent lane selection,
+ * overtaking awareness, recovery detection, and optional seeded PRNG for repeatable acceptance tests.
  */
 export function computeAiInput(
   ai: RacerState,
@@ -70,11 +73,13 @@ export function computeAiInput(
   shockZones: ShockZoneState[],
   difficulty: Difficulty,
   dt: number,
+  rng: () => number = Math.random,
 ): ControlInput {
   const profile = DIFFICULTY_PROFILES[difficulty];
+  const vehicle = getVehicleById(ai.vehicleId);
 
   const input: ControlInput = {
-    throttle: 0.95,
+    throttle: 0.96,
     brake: 0,
     steer: 0,
     drift: false,
@@ -93,24 +98,24 @@ export function computeAiInput(
     return input;
   }
 
-  // Update periodic lane target variation & overtaking offset
+  // Persistent lane decision interval (never flips randomly every frame)
   ai.aiLaneTimer -= dt;
   if (ai.aiLaneTimer <= 0) {
-    ai.aiLaneTimer = 1.6 + Math.random() * 2.2;
-    ai.aiLaneOffset = (Math.random() - 0.5) * (track.def.roadWidth * 0.48);
+    ai.aiLaneTimer = 2.1 + rng() * 2.4;
+    ai.aiLaneOffset = (rng() - 0.5) * (track.def.roadWidth * 0.44);
   }
 
   let targetLane = ai.aiLaneOffset;
 
   // Seek nearby power-up if inventory has an empty slot
   const hasEmptySlot = ai.inventory.some((s) => s === null);
-  if (hasEmptySlot && Math.random() < profile.pickupSeekWeight) {
+  if (hasEmptySlot && profile.pickupSeekWeight > 0.3) {
     let bestPu: TrackPickupNode | null = null;
-    let bestDist = 75;
+    let bestDist = 72;
     for (const pu of pickups) {
       if (!pu.active) continue;
       const ahead = forwardTrackDistance(track, ai.trackT, pu.trackT);
-      if (ahead > 12 && ahead < bestDist) {
+      if (ahead > 14 && ahead < bestDist) {
         bestDist = ahead;
         bestPu = pu;
       }
@@ -123,33 +128,33 @@ export function computeAiInput(
   // Avoid nearby active Shock electric domes ahead
   for (const sz of shockZones) {
     const ahead = forwardTrackDistance(track, ai.trackT, sz.trackT);
-    if (ahead > 4 && ahead < 48) {
+    if (ahead > 4 && ahead < 52) {
       const s = sampleTrackAt(track, sz.trackT);
       const szLat = (sz.x - s.x) * s.rx + (sz.z - s.z) * s.rz;
       if (Math.abs(targetLane - szLat) < 5.5) {
-        targetLane = szLat > 0 ? -6.2 : 6.2;
+        targetLane = szLat > 0 ? -6.0 : 6.0;
       }
     }
   }
 
-  // Overtake slower car directly ahead
+  // Safe overtaking around slower car directly ahead
   for (const other of allRacers) {
-    if (other.id === ai.id || other.destroyed) continue;
+    if (other.id === ai.id || other.destroyed || other.eliminated) continue;
     const ahead = forwardTrackDistance(track, ai.trackT, other.trackT);
-    if (ahead > 3 && ahead < 26 && Math.abs(other.lateralOffset - ai.lateralOffset) < 3.6) {
-      targetLane = other.lateralOffset > 0 ? -5.0 : 5.0;
+    if (ahead > 4 && ahead < 28 && Math.abs(other.lateralOffset - ai.lateralOffset) < 3.8) {
+      targetLane = other.lateralOffset > 0 ? -5.2 : 5.2;
       break;
     }
   }
 
-  // Clamp lane safely inside track walls
-  const maxLane = track.def.roadWidth * 0.5 - 3.2;
+  // Clamp lane safely inside road barriers
+  const maxLane = track.def.roadWidth * 0.5 - 3.4;
   targetLane = Math.max(-maxLane, Math.min(maxLane, targetLane));
 
-  // Look ahead along the spline scaled by speed
-  const lookAheadMeters = Math.max(22, Math.min(58, ai.speed * 0.72 + 16));
-  const lookT = normalizeT(ai.trackT + lookAheadMeters / track.totalLength);
-  const lookSample = sampleTrackAt(track, lookT);
+  // Arc-length distance look-ahead scaled by vehicle speed
+  const aiDist = tToDistance(track, ai.trackT);
+  const lookAheadMeters = Math.max(20, Math.min(54, ai.speed * 0.68 + 15));
+  const lookSample = sampleTrackByDistance(track, aiDist + lookAheadMeters);
   const targetX = lookSample.x + lookSample.rx * targetLane;
   const targetZ = lookSample.z + lookSample.rz * targetLane;
 
@@ -158,49 +163,60 @@ export function computeAiInput(
   while (headingErr > Math.PI) headingErr -= Math.PI * 2;
   while (headingErr < -Math.PI) headingErr += Math.PI * 2;
 
-  // Remember: steerInput = -1 turns left (+heading), +1 turns right (-heading)
-  input.steer = Math.max(-1, Math.min(1, -headingErr * 2.15));
+  input.steer = Math.max(-1, Math.min(1, -headingErr * 2.2));
 
-  // Predict upcoming corner curvature for smart braking & drifting
-  const farSample = sampleTrackAt(track, normalizeT(ai.trackT + 55 / track.totalLength));
-  const cornerSeverity = Math.max(Math.abs(lookSample.curvature), Math.abs(farSample.curvature));
+  // Curvature-based corner entry speed & braking distance calculation
+  const midSample = sampleTrackByDistance(track, aiDist + 38);
+  const farSample = sampleTrackByDistance(track, aiDist + 72);
+  const peakCurvature = Math.max(
+    Math.abs(lookSample.curvature),
+    Math.abs(midSample.curvature),
+    Math.abs(farSample.curvature),
+  );
 
-  // Authentic Blur pack-racing rubber-banding (keeps races wheel-to-wheel without unfair teleporting)
+  // Subtle fair rubber-banding (never grants impossible speeds above vehicle class limits)
   const player = allRacers.find((r) => r.isPlayer);
   let paceMultiplier = profile.speedScale;
   if (player && !player.finished) {
     const progressGap = ai.totalProgress - player.totalProgress;
-    if (progressGap > 0.9) paceMultiplier *= 0.89;
-    else if (progressGap < -0.9) paceMultiplier *= 1.07;
+    if (progressGap > 1.2) paceMultiplier *= 0.92;
+    else if (progressGap < -1.2) paceMultiplier *= 1.04;
   }
 
-  if (cornerSeverity > 0.055 * profile.cornerCaution && ai.speed > 44) {
-    input.throttle = 0.45 * paceMultiplier;
-    input.brake = Math.min(0.65, cornerSeverity * 5.2);
-    if (Math.abs(input.steer) > 0.45) {
+  // Safe corner speed threshold from curvature
+  const safeCornerSpeed =
+    peakCurvature > 0.025
+      ? Math.max(30, (vehicle.stats.topSpeed * 0.92) / (1 + peakCurvature * 11 * profile.cornerCaution))
+      : vehicle.stats.topSpeed;
+
+  if (ai.speed > safeCornerSpeed + 3.5) {
+    const excess = (ai.speed - safeCornerSpeed) / 25;
+    input.throttle = 0.28 * paceMultiplier;
+    input.brake = Math.min(0.75, 0.25 + excess * 0.55);
+    if (Math.abs(input.steer) > 0.45 && ai.speed > 34) {
       input.drift = true;
     }
   } else {
     input.throttle = Math.min(1, paceMultiplier);
   }
 
-  // Recover if stuck or facing wrong way
-  if (ai.wrongWay && Math.abs(ai.speed) < 8) {
+  // Automatic stuck / wrong-way recovery
+  if (ai.wrongWay && Math.abs(ai.speed) < 9) {
     input.recover = true;
   }
 
-  // Tactical power-up usage
+  // Tactical power-up usage on clean decision intervals
   ai.aiDecisionTimer -= dt;
   if (ai.aiDecisionTimer <= 0) {
-    ai.aiDecisionTimer = profile.combatFrequency * (0.7 + Math.random() * 0.6);
+    ai.aiDecisionTimer = profile.combatFrequency * (0.75 + rng() * 0.5);
 
-    // 1. Check incoming homing threat -> prioritize SHIELD or defensive MINE interception!
+    // 1. Incoming homing threat -> SHIELD or defensive MINE
     const hasIncomingThreat = projectiles.some(
-      (p) => p.targetId === ai.id && Math.hypot(p.x - ai.x, p.z - ai.z) < 52,
+      (p) => p.targetId === ai.id && Math.hypot(p.x - ai.x, p.z - ai.z) < 55,
     );
     const shieldIdx = ai.inventory.findIndex((s) => s?.type === 'SHIELD');
     const mineIdx = ai.inventory.findIndex((s) => s?.type === 'MINE');
-    if (hasIncomingThreat && Math.random() < profile.shieldReactionChance) {
+    if (hasIncomingThreat && rng() < profile.shieldReactionChance) {
       if (shieldIdx !== -1) {
         input.selectSlot = shieldIdx;
         input.usePowerUp = true;
@@ -213,19 +229,19 @@ export function computeAiInput(
       }
     }
 
-    // 2. Low health -> prioritize REPAIR
+    // 2. Low health -> REPAIR
     const repairIdx = ai.inventory.findIndex((s) => s?.type === 'REPAIR');
-    if (repairIdx !== -1 && ai.hp < ai.maxHp * 0.6) {
+    if (repairIdx !== -1 && ai.hp < ai.maxHp * 0.62) {
       input.selectSlot = repairIdx;
       input.usePowerUp = true;
       return input;
     }
 
-    // 3. Close opponent -> prioritize BARGE
+    // 3. Close opponent -> BARGE
     const bargeIdx = ai.inventory.findIndex((s) => s?.type === 'BARGE');
     if (bargeIdx !== -1) {
       const nearbyEnemy = allRacers.some(
-        (r) => r.id !== ai.id && !r.destroyed && Math.hypot(r.x - ai.x, r.z - ai.z) < 9.5,
+        (r) => r.id !== ai.id && !r.destroyed && Math.hypot(r.x - ai.x, r.z - ai.z) < 10,
       );
       if (nearbyEnemy) {
         input.selectSlot = bargeIdx;
@@ -234,9 +250,9 @@ export function computeAiInput(
       }
     }
 
-    // 4. Straightaway -> use NITRO
+    // 4. Clear straightaway -> NITRO
     const nitroIdx = ai.inventory.findIndex((s) => s?.type === 'NITRO');
-    if (nitroIdx !== -1 && cornerSeverity < 0.035) {
+    if (nitroIdx !== -1 && peakCurvature < 0.036) {
       input.selectSlot = nitroIdx;
       input.usePowerUp = true;
       return input;

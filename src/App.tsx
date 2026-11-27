@@ -70,6 +70,8 @@ export function App() {
   lastConfigRef.current = lastRaceConfig;
   const careerIdRef = useRef(activeCareerEventId);
   careerIdRef.current = activeCareerEventId;
+  // Keep session Bearer token strictly in memory (never persisted to localStorage)
+  const authTokenRef = useRef<string | null>(null);
 
   // Mirror state machine to document.body.dataset.state for accessibility & testing
   useEffect(() => {
@@ -130,17 +132,32 @@ export function App() {
     setProfile(updated);
     saveLocalProfile(updated);
 
-    // Report score to server leaderboard asynchronously
-    fetch('/api/race/complete', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        username: updated.username,
-        fanPoints: updated.fanPoints,
-        wins: updated.wins,
-        vehicle: getVehicleById(updated.selectedVehicleId).name,
-      }),
-    }).catch(() => {});
+    // Report authenticated race summary to server for server-authoritative reward verification
+    const token = authTokenRef.current;
+    if (token) {
+      const apiBase = ((import.meta.env.VITE_API_BASE_URL as string | undefined) || '').replace(/\/$/, '');
+      const transactionId =
+        typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+          ? crypto.randomUUID()
+          : `race_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+      fetch(`${apiBase}/api/race/complete`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          transactionId,
+          position: finalSnap.position,
+          totalRacers: finalSnap.totalRacers,
+          hitsLanded: playerStanding?.hitsLanded ?? 0,
+          takedowns: playerStanding?.takedowns ?? 0,
+          blocksLanded: 0,
+          difficulty: cfg?.difficulty ?? 'normal',
+          vehicle: getVehicleById(updated.selectedVehicleId).name,
+        }),
+      }).catch(() => {});
+    }
   }, []);
 
   const launchRace = useCallback(
@@ -531,7 +548,8 @@ export function App() {
           language={settings.language}
           onStartCareerEvent={handleStartCareerEvent}
           onClaimMission={handleClaimMission}
-          onAuthSuccess={(uname, isGuest, serverData) => {
+          onAuthSuccess={(uname, isGuest, serverData, token) => {
+            if (token) authTokenRef.current = token;
             const updated: PlayerProfile = {
               ...profile,
               ...(serverData ?? {}),
