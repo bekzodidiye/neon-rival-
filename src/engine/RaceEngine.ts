@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import type {
   BargeWaveState,
   CameraMode,
@@ -40,6 +41,14 @@ import {
   POWERUP_BALANCE,
   POWERUP_DEFS,
 } from '../game/powerups';
+import {
+  applyComboFans,
+  COMBAT_RULES,
+  resolveBargeInterceptions,
+  resolveBoltVsShunt,
+  resolveNitroAirBrake,
+  resolveShockVsShield,
+} from '../game/combatResolver';
 import { resolveCarCollisions, stepVehiclePhysics } from '../game/physics';
 import { AI_DRIVER_NAMES, computeAiInput } from '../game/ai';
 import { createProceduralTexturePack, type ProceduralTexturePack } from './proceduralTextures';
@@ -47,6 +56,12 @@ import { applyVehicleCustomization, buildVehicleRig, type VehicleRig } from './v
 import { buildTrackScene, type BuiltTrackScene } from './trackMesh';
 import { RacingAudioEngine } from './audio';
 import { RacingInputHub } from './input';
+import {
+  CameraMotionBlurShader,
+  computeCameraMotionBlurParams,
+  createCameraSpeedStreakRig,
+  type CameraSpeedStreakRig,
+} from './motionBlur';
 
 export type EngineMode = 'title' | 'garage' | 'playing' | 'paused' | 'results';
 
@@ -172,6 +187,14 @@ export class RaceEngine {
   private renderer: THREE.WebGLRenderer;
   private composer: EffectComposer | null = null;
   private bloomPass: UnrealBloomPass | null = null;
+  private motionBlurPass: ShaderPass | null = null;
+  private speedStreakRig: CameraSpeedStreakRig;
+  private motionBlurEnabled = true;
+  private motionBlurSeeded = false;
+  private currViewProjMatrix = new THREE.Matrix4();
+  private prevViewProjMatrix = new THREE.Matrix4();
+  private invViewProjMatrix = new THREE.Matrix4();
+  private prevCameraYaw = 0;
   private scene: THREE.Scene;
   private camera: THREE.PerspectiveCamera;
   private envRT: THREE.WebGLRenderTarget | null = null;
@@ -284,6 +307,10 @@ export class RaceEngine {
     const w = Math.max(1, container.clientWidth);
     const h = Math.max(1, container.clientHeight);
     this.camera = new THREE.PerspectiveCamera(62, w / h, 0.25, 1400);
+    this.scene.add(this.camera);
+    this.speedStreakRig = createCameraSpeedStreakRig();
+    this.camera.add(this.speedStreakRig.lines);
+    this.motionBlurEnabled = initialSettings.motionBlur !== false;
     this.renderer.setSize(w, h, false);
 
     // Custom dark Night-City Neon PMREM for glossy metallic car reflections & glare-free dark wet asphalt
@@ -314,12 +341,15 @@ export class RaceEngine {
     this.scene.add(this.keyLight);
     this.scene.add(this.keyLight.target);
 
-    // Authentic Blur neon bloom post-processing on hardware GPUs (skipped on software WebGL)
+    // Authentic Blur neon bloom + camera-velocity motion blur post-processing on hardware GPUs (skipped on software WebGL)
     if (!this.isSoftwareGl) {
       this.composer = new EffectComposer(this.renderer);
       this.composer.addPass(new RenderPass(this.scene, this.camera));
       this.bloomPass = new UnrealBloomPass(new THREE.Vector2(w, h), 0.62, 0.42, 0.72);
       this.composer.addPass(this.bloomPass);
+      this.motionBlurPass = new ShaderPass(CameraMotionBlurShader);
+      this.motionBlurPass.enabled = false;
+      this.composer.addPass(this.motionBlurPass);
     }
 
     // Procedural Textures
@@ -494,10 +524,25 @@ export class RaceEngine {
     this.audio.applySettings(settings);
     this.input.setAutoAccelerate(settings.autoAccelerate);
     this.applyGraphicsPreset(settings.graphics);
+    this.motionBlurEnabled = settings.motionBlur !== false;
+    if (!this.motionBlurEnabled) {
+      this.resetMotionBlurState();
+    }
   }
 
   public setPing(ms: number): void {
     this.pingMs = ms;
+  }
+
+  private resetMotionBlurState(): void {
+    this.motionBlurSeeded = false;
+    if (this.motionBlurPass) {
+      this.motionBlurPass.uniforms['uIntensity'].value = 0;
+      this.motionBlurPass.uniforms['uRadialStrength'].value = 0;
+      this.motionBlurPass.uniforms['uChromatic'].value = 0;
+      this.motionBlurPass.enabled = false;
+    }
+    this.speedStreakRig.lines.visible = false;
   }
 
   public setMode(mode: EngineMode): void {
@@ -506,6 +551,7 @@ export class RaceEngine {
     this.input.setGameplayActive(isPlaying);
     this.audio.setEngineActive(isPlaying);
     this.garageGroup.visible = mode === 'title' || mode === 'garage';
+    this.resetMotionBlurState();
     if (mode === 'title' || mode === 'garage') {
       this.clearRaceEntities();
       const s = sampleTrackAt(this.currentTrack, 0.985);
@@ -546,6 +592,7 @@ export class RaceEngine {
     const order: CameraMode[] = ['near', 'far', 'hood'];
     const idx = order.indexOf(this.cameraMode);
     this.cameraMode = order[(idx + 1) % order.length];
+    this.resetMotionBlurState();
     this.audio.playUiClick();
   }
 
@@ -652,6 +699,11 @@ export class RaceEngine {
         hitFlashTimer: 0,
         hp: carDef.stats.durability,
         maxHp: carDef.stats.durability,
+        maxHealthBlocks: carDef.stats.maxHealthBlocks,
+        shieldHp: 0,
+        airBrakeBoostTimer: 0,
+        comboCount: 0,
+        comboTimer: 0,
         destroyed: false,
         respawnTimer: 0,
         inventory: [null, null, null],
@@ -836,12 +888,68 @@ export class RaceEngine {
       this.updateRaceFrame(realDt);
     }
 
-    if (this.composer && !this.isSoftwareGl) {
-      this.composer.render();
-    } else {
-      this.renderer.render(this.scene, this.camera);
-    }
+    this.updateCameraMotionBlur(dt);
+    this.renderCurrentFrame();
+    this.captureCameraMotionHistory();
     this.scheduleNextTick();
+  }
+
+  /** Updates camera-velocity motion blur shader uniforms & camera-anchored peripheral speed streaks. */
+  private updateCameraMotionBlur(dt: number): void {
+    this.camera.updateMatrixWorld();
+    this.currViewProjMatrix.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse);
+    this.invViewProjMatrix.copy(this.currViewProjMatrix).invert();
+
+    this.camera.getWorldDirection(_vecA);
+    const currentYaw = Math.atan2(_vecA.x, _vecA.z);
+    let yawDelta = 0;
+    if (this.motionBlurSeeded) {
+      yawDelta = currentYaw - this.prevCameraYaw;
+      while (yawDelta > Math.PI) yawDelta -= Math.PI * 2;
+      while (yawDelta < -Math.PI) yawDelta += Math.PI * 2;
+    } else {
+      this.prevViewProjMatrix.copy(this.currViewProjMatrix);
+      this.prevCameraYaw = currentYaw;
+    }
+
+    const player = this.mode === 'playing' ? this.getPlayerRacer() : undefined;
+    const canBlur = this.mode === 'playing' && this.racePhase === 'racing' && Boolean(player && !player.destroyed);
+    const carTop = player ? getVehicleById(player.vehicleId).stats.topSpeed : 80;
+    const nitroOn = Boolean(player && player.nitroTimer > 0 && !player.destroyed);
+
+    const params = computeCameraMotionBlurParams({
+      mode: canBlur ? 'playing' : 'title',
+      enabled: this.motionBlurEnabled,
+      speedMs: player ? player.speed : 0,
+      topSpeedMs: carTop,
+      lateralSpeedMs: player ? player.lateralSpeed : 0,
+      nitroActive: nitroOn,
+      isDrafting: Boolean(player?.isDrafting),
+      cameraMode: this.cameraMode,
+      cameraYawDelta: yawDelta,
+      dt,
+    });
+
+    if (this.motionBlurPass) {
+      const uniforms = this.motionBlurPass.uniforms;
+      uniforms['uIntensity'].value = params.intensity;
+      uniforms['uRadialStrength'].value = params.radialStrength;
+      (uniforms['uCamVelocity'].value as THREE.Vector2).set(params.camVelocityUv.x, params.camVelocityUv.y);
+      (uniforms['uVanishingUv'].value as THREE.Vector2).set(params.vanishingUv.x, params.vanishingUv.y);
+      uniforms['uChromatic'].value = params.chromaticAmount;
+      (uniforms['uPrevViewProj'].value as THREE.Matrix4).copy(this.prevViewProjMatrix);
+      (uniforms['uInvViewProj'].value as THREE.Matrix4).copy(this.invViewProjMatrix);
+      this.motionBlurPass.enabled = params.intensity > 0.004;
+    }
+
+    this.speedStreakRig.update(params, nitroOn, dt);
+  }
+
+  private captureCameraMotionHistory(): void {
+    this.prevViewProjMatrix.copy(this.currViewProjMatrix);
+    this.camera.getWorldDirection(_vecA);
+    this.prevCameraYaw = Math.atan2(_vecA.x, _vecA.z);
+    this.motionBlurSeeded = true;
   }
 
   private updateTitleCamera(dt: number): void {
@@ -1155,34 +1263,34 @@ export class RaceEngine {
     switch (type) {
       case 'NITRO': {
         if (rearFired) {
-          // Authentic Blur Reverse Nitro = Instant Air-Brake!
-          owner.vx *= 0.42;
-          owner.vz *= 0.42;
-          owner.speed *= 0.42;
+          // Authentic Blur 2-Stage Reverse Nitro = Air-Brake + Corner-Exit Surge!
+          resolveNitroAirBrake(owner);
           this.spawnBurst(owner.x + fwdX * 2.2, owner.y + 0.6, owner.z + fwdZ * 2.2, 16, 0x25f4a0, 12);
           if (owner.isPlayer) {
             this.cameraTrauma = Math.min(1, this.cameraTrauma + 0.24);
-            this.awardFans(owner, 75, 'AIR-BRAKE +75 FANS', '#25F4A0');
+            this.awardFans(owner, 75, 'AIR-BRAKE BOOST', '#25F4A0');
           }
         } else {
           const mult = getVehicleById(owner.vehicleId).stats.nitroEfficiency;
           owner.nitroTimer = Math.max(owner.nitroTimer, POWERUP_BALANCE.NITRO_DURATION * mult);
           if (owner.isPlayer) {
             this.cameraTrauma = Math.min(1, this.cameraTrauma + 0.34);
-            this.awardFans(owner, 50, 'NITRO OVERDRIVE +50 FANS', '#25F4A0');
+            this.awardFans(owner, 50, 'NITRO OVERDRIVE', '#25F4A0');
           }
         }
         break;
       }
       case 'SHIELD': {
         owner.shieldTimer = POWERUP_BALANCE.SHIELD_DURATION;
+        owner.shieldHp = POWERUP_BALANCE.SHIELD_CAPACITY;
         if (owner.isPlayer) this.pushFeed('SHIELD DEFLECTOR ONLINE', '#00D8FF');
         break;
       }
       case 'REPAIR': {
-        applyRepairPowerUp(owner);
+        const healed = applyRepairPowerUp(owner);
+        const blocksHealed = Math.ceil(healed / POWERUP_BALANCE.HEALTH_PER_BLOCK);
         this.spawnBurst(owner.x, owner.y + 1.1, owner.z, 20, 0x22c55e, 10);
-        if (owner.isPlayer) this.awardFans(owner, 50, 'FULL CHASSIS REPAIR', '#22C55E');
+        if (owner.isPlayer) this.awardFans(owner, 50, `CHASSIS REPAIR (+${blocksHealed} BLOCKS)`, '#22C55E');
         break;
       }
       case 'SHUNT': {
@@ -1194,7 +1302,7 @@ export class RaceEngine {
               this.spawnBurst(proj.x, proj.y, proj.z, 22, 0xff2a55, 16);
               if (owner.isPlayer) {
                 this.audio.playShieldBlock();
-                this.awardFans(owner, 200, 'SHUNT INTERCEPTED! +200 FANS', '#FF2A55');
+                this.awardFans(owner, 200, 'SHUNT INTERCEPTED!', '#FF2A55');
               }
               return;
             }
@@ -1229,6 +1337,7 @@ export class RaceEngine {
           life: POWERUP_BALANCE.SHUNT_LIFETIME,
           maxLife: POWERUP_BALANCE.SHUNT_LIFETIME,
           rearFired: dir < 0,
+          health: COMBAT_RULES.SHUNT_INITIAL_HEALTH,
         };
         this.projectiles.push(p);
         const mesh = new THREE.Mesh(this.shuntGeo, this.shuntMat);
@@ -1238,15 +1347,20 @@ export class RaceEngine {
         break;
       }
       case 'BOLT': {
-        // Authentic Blur counter-play: rear-fired Bolt shoots down an incoming chasing Shunt!
+        // V3.0 Sec 23 & 30: Rear-fired Bolt weakens incoming Shunt on 1st hit, destroys it on 2nd hit!
         if (dir < 0) {
           for (const proj of this.projectiles) {
-            if (proj.targetId === owner.id && Math.hypot(proj.x - owner.x, proj.z - owner.z) < 38) {
-              proj.life = 0;
-              this.spawnBurst(proj.x, proj.y, proj.z, 20, 0xff8a00, 15);
+            if (proj.type === 'SHUNT' && proj.targetId === owner.id && Math.hypot(proj.x - owner.x, proj.z - owner.z) < 38) {
+              const bRes = resolveBoltVsShunt(proj);
+              this.spawnBurst(proj.x, proj.y, proj.z, bRes.destroyed ? 22 : 12, 0xff8a00, bRes.destroyed ? 16 : 10);
               if (owner.isPlayer) {
                 this.audio.playShieldBlock();
-                this.awardFans(owner, 200, 'BOLT INTERCEPTED SHUNT! +200 FANS', '#FF8A00');
+                this.awardFans(
+                  owner,
+                  bRes.destroyed ? 200 : 75,
+                  bRes.destroyed ? 'BOLT DESTROYED SHUNT!' : 'BOLT WEAKENED SHUNT!',
+                  '#FF8A00',
+                );
               }
               return;
             }
@@ -1268,6 +1382,7 @@ export class RaceEngine {
           life: POWERUP_BALANCE.BOLT_LIFETIME,
           maxLife: POWERUP_BALANCE.BOLT_LIFETIME,
           rearFired: dir < 0,
+          health: 1,
         };
         this.projectiles.push(p);
         const mesh = new THREE.Mesh(this.boltGeo, this.boltMat);
@@ -1325,12 +1440,24 @@ export class RaceEngine {
             this.onCombatHit(owner, other, 'BARGE', res.blockedByShield, res.destroyedNow);
           }
         }
-        // Intercept nearby enemy projectiles
-        for (const proj of this.projectiles) {
-          if (proj.ownerId !== owner.id && Math.hypot(proj.x - owner.x, proj.z - owner.z) < POWERUP_BALANCE.BARGE_RADIUS) {
-            proj.life = 0;
-            this.spawnBurst(proj.x, proj.y, proj.z, 10, 0xa855f7, 10);
-          }
+        // V3.0 Sec 24 & 30: Barge intercepts enemy Shunts, Bolts, AND nearby Mines via combatResolver
+        const bargeInter = resolveBargeInterceptions(
+          owner.id,
+          owner.x,
+          owner.z,
+          POWERUP_BALANCE.BARGE_RADIUS,
+          this.projectiles,
+          this.mines,
+        );
+        for (const dp of bargeInter.destroyedProjectiles) {
+          this.spawnBurst(dp.x, dp.y, dp.z, 12, 0xa855f7, 12);
+        }
+        for (const dm of bargeInter.destroyedMines) {
+          this.spawnBurst(dm.x, dm.y, dm.z, 16, 0xfacc15, 14);
+        }
+        if (owner.isPlayer && (bargeInter.destroyedProjectiles.length > 0 || bargeInter.destroyedMines.length > 0)) {
+          this.audio.playShieldBlock();
+          this.awardFans(owner, 150, 'BARGE CLEARED HAZARDS!', '#B24BF3');
         }
         break;
       }
@@ -1425,9 +1552,10 @@ export class RaceEngine {
   }
 
   private awardFans(racer: RacerState, amount: number, label: string, color: string): void {
-    racer.raceFans = (racer.raceFans ?? 0) + amount;
+    const combo = applyComboFans(racer, amount);
     if (racer.isPlayer) {
-      this.pushFeed(label, color);
+      const suffix = combo.comboCount > 1 ? ` x${combo.comboCount} (+${combo.awarded})` : ` +${combo.awarded} FANS`;
+      this.pushFeed(`${label}${suffix}`, color);
     }
   }
 
@@ -1555,27 +1683,53 @@ export class RaceEngine {
         );
       }
 
-      // Check hit against racers
+      // Check in-flight BOLT vs enemy SHUNT 2-hit interception (V3.0 Sec 23 & 30)
       let hit = false;
-      for (const r of this.racers) {
-        if (r.id === p.ownerId || r.destroyed || r.eliminated) continue;
-        const dx = r.x - p.x;
-        const dz = r.z - p.z;
-        if (dx * dx + dz * dz < 6.8) {
-          const attacker = this.racers.find((a) => a.id === p.ownerId);
-          const norm = Math.hypot(p.vx, p.vz) || 1;
-          const kb = p.type === 'SHUNT' ? 16 : 6;
-          const res = applyCombatDamage(
-            r,
-            p.damage,
-            attacker,
-            (p.vx / norm) * kb,
-            (p.vz / norm) * kb,
-            p.type === 'SHUNT' ? 0.32 : 0.12,
-          );
-          this.onCombatHit(attacker, r, p.type, res.blockedByShield, res.destroyedNow);
-          hit = true;
-          break;
+      if (p.type === 'BOLT' && p.life > 0) {
+        for (const other of this.projectiles) {
+          if (other.type !== 'SHUNT' || other.ownerId === p.ownerId || other.life <= 0) continue;
+          const bdx = other.x - p.x;
+          const bdz = other.z - p.z;
+          if (bdx * bdx + bdz * bdz < 10.24) {
+            const res = resolveBoltVsShunt(other);
+            this.spawnBurst(other.x, other.y, other.z, res.destroyed ? 18 : 10, 0x38bdf8, res.destroyed ? 14 : 9);
+            const shooter = this.racers.find((a) => a.id === p.ownerId);
+            if (shooter?.isPlayer) {
+              this.audio.playShieldBlock();
+              if (res.destroyed) {
+                this.awardFans(shooter, 160, 'BOLT DESTROYED SHUNT! +160 FANS', '#38BDF8');
+              } else {
+                this.awardFans(shooter, 70, 'BOLT WEAKENED SHUNT! +70 FANS', '#38BDF8');
+              }
+            }
+            hit = true;
+            break;
+          }
+        }
+      }
+
+      // Check hit against racers
+      if (!hit) {
+        for (const r of this.racers) {
+          if (r.id === p.ownerId || r.destroyed || r.eliminated) continue;
+          const dx = r.x - p.x;
+          const dz = r.z - p.z;
+          if (dx * dx + dz * dz < 6.8) {
+            const attacker = this.racers.find((a) => a.id === p.ownerId);
+            const norm = Math.hypot(p.vx, p.vz) || 1;
+            const kb = p.type === 'SHUNT' ? 16 : 6;
+            const res = applyCombatDamage(
+              r,
+              p.damage,
+              attacker,
+              (p.vx / norm) * kb,
+              (p.vz / norm) * kb,
+              p.type === 'SHUNT' ? 0.32 : 0.12,
+            );
+            this.onCombatHit(attacker, r, p.type, res.blockedByShield, res.destroyedNow);
+            hit = true;
+            break;
+          }
         }
       }
 
@@ -1659,11 +1813,16 @@ export class RaceEngine {
         if (dx * dx + dz * dz < sz.radius * sz.radius) {
           sz.hitRacerIds.push(r.id);
           const attacker = this.racers.find((a) => a.id === sz.ownerId);
-          const res = applyCombatDamage(r, sz.damage, attacker, 0, 0, 0.35);
-          if (!res.blockedByShield) {
-            r.shockSlowTimer = POWERUP_BALANCE.SHOCK_SLOW_DURATION;
+          // V3.0 Sec 26 & 30: Standard Shield absorbs Shock impact but is depleted by it
+          if (resolveShockVsShield(r)) {
+            this.onCombatHit(attacker, r, 'SHOCK', true, false);
+          } else {
+            const res = applyCombatDamage(r, sz.damage, attacker, 0, 0, 0.35);
+            if (!res.blockedByShield) {
+              r.shockSlowTimer = POWERUP_BALANCE.SHOCK_SLOW_DURATION;
+            }
+            this.onCombatHit(attacker, r, 'SHOCK', res.blockedByShield, res.destroyedNow);
           }
-          this.onCombatHit(attacker, r, 'SHOCK', res.blockedByShield, res.destroyedNow);
         }
       }
 
@@ -1980,8 +2139,9 @@ export class RaceEngine {
       speedKmh,
       gear,
       rpmRatio,
-      hp: Math.round(player?.hp ?? 100),
-      maxHp: Math.round(player?.maxHp ?? 100),
+      hp: Math.round(player?.hp ?? 120),
+      maxHp: Math.round(player?.maxHp ?? 120),
+      maxHealthBlocks: player?.maxHealthBlocks ?? 6,
       shieldActive: (player?.shieldTimer ?? 0) > 0,
       shieldRemaining: player?.shieldTimer ?? 0,
       nitroActive: (player?.nitroTimer ?? 0) > 0,
@@ -1995,6 +2155,11 @@ export class RaceEngine {
       rearFireMode: player?.rearFireMode ?? false,
       cameraMode: this.cameraMode,
       raceFans: player?.raceFans ?? 0,
+      comboCount: (player?.comboTimer ?? 0) > 0 ? (player?.comboCount ?? 0) : 0,
+      comboMultiplier:
+        (player?.comboTimer ?? 0) > 0 && (player?.comboCount ?? 0) > 1
+          ? Number((1 + ((player?.comboCount ?? 1) - 1) * 0.2).toFixed(1))
+          : 1,
       lockTargetScreen,
       inventory: player ? player.inventory.map((s) => (s ? { ...s } : null)) : [null, null, null],
       activeSlot: player?.activeSlot ?? 0,
@@ -2061,6 +2226,8 @@ export class RaceEngine {
     this.garageHeroRig?.dispose();
     this.trackScene?.dispose();
     this.textures.dispose();
+    this.speedStreakRig.dispose();
+    this.motionBlurPass?.dispose();
     this.envRT?.dispose();
     this.composer?.dispose();
     this.shuntGeo.dispose();

@@ -148,6 +148,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ settings, onChange
                   <span>AUTO GAS</span>
                   <span className="text-[#25F4A0] font-bold">{settings.autoAccelerate ? 'ON' : 'OFF'}</span>
                 </button>
+                <button
+                  type="button"
+                  onClick={() => onChange({ motionBlur: settings.motionBlur === false })}
+                  className="col-span-2 bg-[#101522] border border-white/15 hover:border-[#00C8FF] px-3 py-2 text-xs font-mono-num text-[#F5F7FA] flex justify-between cursor-pointer"
+                >
+                  <span>MOTION BLUR</span>
+                  <span className={settings.motionBlur !== false ? 'text-[#25F4A0] font-bold' : 'text-[#94A3B8] font-bold'}>
+                    {settings.motionBlur !== false ? 'ON' : 'OFF'}
+                  </span>
+                </button>
               </div>
             </div>
 

@@ -2,6 +2,8 @@ export type VehicleClass = 'D' | 'C' | 'B' | 'A';
 
 export type VehicleArchetype = 'coupe' | 'muscle' | 'supercar' | 'gt';
 
+export type HandlingArchetype = 'grippy' | 'drifty' | 'balanced' | 'offroad';
+
 export type PaintFinish = 'metallic' | 'matte' | 'gloss';
 
 export type SpoilerStyle = 'none' | 'street' | 'gt' | 'wing';
@@ -24,7 +26,8 @@ export interface VehicleStats {
   handling: number; // rad/s base steer rate
   grip: number; // lateral friction coeff
   driftControl: number; // 0-1 drift stability
-  durability: number; // max HP (e.g. 100 - 130)
+  durability: number; // max HP (maxHealthBlocks * 20)
+  maxHealthBlocks: number; // Blur-style segmented health blocks (5..8)
   nitroEfficiency: number; // multiplier on nitro duration/power
   weight: number; // kg (affects knockback resistance)
 }
@@ -35,6 +38,7 @@ export interface VehicleConfig {
   subtitle: string;
   vehicleClass: VehicleClass;
   archetype: VehicleArchetype;
+  handlingArchetype: HandlingArchetype;
   price: number;
   defaultCustomization: VehicleCustomization;
   stats: VehicleStats;
@@ -150,7 +154,9 @@ export interface RacerState {
   driftTime: number;
   nitroTimer: number;
   nitroEnergy: number; // 0..100 passive drift-charge + pickup
+  airBrakeBoostTimer?: number; // Delayed corner-exit surge after reverse Nitro airbrake
   shieldTimer: number;
+  shieldHp?: number; // Absorption capacity depleted by impacts & Shock domes
   shockSlowTimer: number;
   stunTimer: number;
   spawnProtectTimer: number;
@@ -159,6 +165,7 @@ export interface RacerState {
   // Combat & health
   hp: number;
   maxHp: number;
+  maxHealthBlocks?: number;
   destroyed: boolean;
   respawnTimer: number;
   inventory: (PowerUpSlot | null)[];
@@ -188,6 +195,8 @@ export interface RacerState {
   blocksLanded: number;
   damageDealt: number;
   raceFans?: number;
+  comboCount?: number;
+  comboTimer?: number;
   isDrafting?: boolean;
 
   // AI parameters
@@ -212,6 +221,7 @@ export interface ProjectileState {
   life: number;
   maxLife: number;
   rearFired: boolean;
+  health?: number; // Shunt takes 2 Bolt hits (1st weakens, 2nd destroys)
 }
 
 export interface MineState {
@@ -304,6 +314,7 @@ export interface RaceHudSnapshot {
   rpmRatio: number; // 0..1
   hp: number;
   maxHp: number;
+  maxHealthBlocks: number;
   shieldActive: boolean;
   shieldRemaining: number;
   nitroActive: boolean;
@@ -317,6 +328,8 @@ export interface RaceHudSnapshot {
   rearFireMode: boolean;
   cameraMode: CameraMode;
   raceFans: number;
+  comboCount: number;
+  comboMultiplier: number;
   lockTargetScreen: { x: number; y: number; name: string; dist: number; color: string } | null;
   inventory: (PowerUpSlot | null)[];
   activeSlot: number;
@@ -353,6 +366,7 @@ export interface RaceRewards {
 export interface SettingsState {
   language: LanguageCode;
   graphics: GraphicsPreset;
+  motionBlur: boolean;
   masterVolume: number;
   engineVolume: number;
   sfxVolume: number;

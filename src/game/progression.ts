@@ -235,6 +235,7 @@ export function createDefaultSettings(): SettingsState {
   return {
     language: 'en',
     graphics: 'high',
+    motionBlur: true,
     masterVolume: 0.75,
     engineVolume: 0.65,
     sfxVolume: 0.85,

@@ -22,7 +22,17 @@ import {
 } from './powerups';
 import { calculateRaceRewards } from './progression';
 import { VEHICLES } from './vehicles';
-import type { ControlInput, RacerState } from './types';
+import {
+  applyComboFans,
+  COMBAT_RULES,
+  resolveBargeInterceptions,
+  resolveBoltVsShunt,
+  resolveNitroAirBrake,
+  resolveShieldAbsorption,
+  resolveShockVsShield,
+} from './combatResolver';
+import { computeCameraMotionBlurParams } from '../engine/motionBlur';
+import type { ControlInput, MineState, ProjectileState, RacerState } from './types';
 
 function makeTestRacer(id: string, track = buildTrack('neon_city')): RacerState {
   const spawn = getSpawnGridTransform(track, 0);
@@ -273,3 +283,247 @@ test('Checkpoints prevent lap skipping, count sequential laps, and rank standing
   assert.ok(rewards.credits > 2000);
   assert.ok(rewards.xp > 300);
 });
+
+test('Camera-based motion blur scales with speed, Nitro, Slipstream, and camera yaw velocity', () => {
+  // Off during title screen or when disabled in settings
+  const menuBlur = computeCameraMotionBlurParams({
+    mode: 'title',
+    enabled: true,
+    speedMs: 85,
+    topSpeedMs: 80,
+    lateralSpeedMs: 0,
+    nitroActive: true,
+    isDrafting: false,
+    cameraMode: 'near',
+    cameraYawDelta: 0.05,
+    dt: 1 / 60,
+  });
+  assert.equal(menuBlur.intensity, 0);
+  assert.equal(menuBlur.radialStrength, 0);
+
+  const disabledBlur = computeCameraMotionBlurParams({
+    mode: 'playing',
+    enabled: false,
+    speedMs: 85,
+    topSpeedMs: 80,
+    lateralSpeedMs: 0,
+    nitroActive: true,
+    isDrafting: true,
+    cameraMode: 'near',
+    cameraYawDelta: 0.05,
+    dt: 1 / 60,
+  });
+  assert.equal(disabledBlur.intensity, 0);
+
+  // Slow launch stays crisp (zero blur below 30 m/s)
+  const slowBlur = computeCameraMotionBlurParams({
+    mode: 'playing',
+    enabled: true,
+    speedMs: 22,
+    topSpeedMs: 80,
+    lateralSpeedMs: 0,
+    nitroActive: false,
+    isDrafting: false,
+    cameraMode: 'near',
+    cameraYawDelta: 0,
+    dt: 1 / 60,
+  });
+  assert.equal(slowBlur.intensity, 0);
+
+  // High speed builds radial blur; Nitro and Slipstream push intensity & chromatic split higher
+  const fastBlur = computeCameraMotionBlurParams({
+    mode: 'playing',
+    enabled: true,
+    speedMs: 74,
+    topSpeedMs: 80,
+    lateralSpeedMs: 0,
+    nitroActive: false,
+    isDrafting: false,
+    cameraMode: 'near',
+    cameraYawDelta: 0,
+    dt: 1 / 60,
+  });
+  const nitroBlur = computeCameraMotionBlurParams({
+    mode: 'playing',
+    enabled: true,
+    speedMs: 96,
+    topSpeedMs: 80,
+    lateralSpeedMs: 0,
+    nitroActive: true,
+    isDrafting: true,
+    cameraMode: 'near',
+    cameraYawDelta: 0,
+    dt: 1 / 60,
+  });
+  assert.ok(fastBlur.intensity > 0.25, `Expected noticeable high-speed blur, got ${fastBlur.intensity}`);
+  assert.ok(nitroBlur.intensity > fastBlur.intensity, 'Nitro + Slipstream must intensify motion blur');
+  assert.ok(nitroBlur.chromaticAmount > fastBlur.chromaticAmount, 'Nitro must boost peripheral chromatic aberration');
+
+  // Camera yaw turning drives horizontal velocity blur vector and shifts vanishing point
+  const turningBlur = computeCameraMotionBlurParams({
+    mode: 'playing',
+    enabled: true,
+    speedMs: 68,
+    topSpeedMs: 80,
+    lateralSpeedMs: 12,
+    nitroActive: false,
+    isDrafting: false,
+    cameraMode: 'near',
+    cameraYawDelta: 0.035,
+    dt: 1 / 60,
+  });
+  assert.ok(turningBlur.camVelocityUv.x > 0.01, `Camera yaw should create positive horizontal velocity blur, got ${turningBlur.camVelocityUv.x}`);
+  assert.ok(turningBlur.vanishingUv.x > 0.5, 'Turning camera should shift radial vanishing center');
+});
+
+test('V3.0 Segmented health & 4-block Repair cap restores max 80 HP on 8-block vehicle', () => {
+  const track = buildTrack('neon_city');
+  const heavy = makeTestRacer('heavy', track);
+  const viper = VEHICLES.find((v) => v.id === 'night_viper')!;
+  heavy.vehicleId = viper.id;
+  heavy.maxHealthBlocks = viper.stats.maxHealthBlocks;
+  heavy.maxHp = viper.stats.durability;
+  heavy.hp = 20;
+
+  assert.equal(viper.stats.maxHealthBlocks, 8);
+  assert.equal(viper.stats.durability, 160);
+
+  const healed = applyRepairPowerUp(heavy);
+  assert.equal(healed, 80, 'Repair must cap at 4 health blocks (80 HP)');
+  assert.equal(heavy.hp, 100, 'HP should increase from 20 to 100 without full heal');
+
+  // Second repair clamps cleanly to maxHp (160)
+  const healed2 = applyRepairPowerUp(heavy);
+  assert.equal(healed2, 60);
+  assert.equal(heavy.hp, 160);
+});
+
+test('V3.0 Combat resolver handles 2-hit Bolt vs Shunt, Barge clearing mines/projectiles, Shield capacity, and Shock vs Shield', () => {
+  const track = buildTrack('neon_city');
+  const defender = makeTestRacer('p2', track);
+
+  // 1. 2-hit Bolt vs Shunt
+  const shunt: ProjectileState = {
+    id: 'shunt-1',
+    type: 'SHUNT',
+    ownerId: 'ai-1',
+    targetId: 'p2',
+    x: 10,
+    y: 1,
+    z: 10,
+    vx: 0,
+    vz: 100,
+    speed: 100,
+    life: 4,
+    maxLife: 4,
+    damage: 34,
+    rearFired: false,
+    health: COMBAT_RULES.SHUNT_INITIAL_HEALTH,
+  };
+  const firstHit = resolveBoltVsShunt(shunt);
+  assert.equal(firstHit.weakened, true);
+  assert.equal(firstHit.destroyed, false);
+  assert.equal(firstHit.remainingHealth, 1);
+  assert.ok(shunt.speed < 100, 'First Bolt hit must slow Shunt');
+
+  const secondHit = resolveBoltVsShunt(shunt);
+  assert.equal(secondHit.destroyed, true);
+  assert.equal(shunt.life, 0);
+
+  // 2. Barge radial pulse clears nearby enemy Shunts, Bolts, AND Mines
+  const projList: ProjectileState[] = [
+    { id: 'e-shunt', type: 'SHUNT', ownerId: 'ai-1', targetId: 'p1', x: 4, y: 1, z: 0, vx: 0, vz: 50, speed: 50, life: 3, maxLife: 3, damage: 30, rearFired: false },
+    { id: 'e-bolt', type: 'BOLT', ownerId: 'ai-2', targetId: null, x: 0, y: 1, z: 6, vx: 0, vz: 50, speed: 50, life: 2, maxLife: 2, damage: 15, rearFired: false },
+    { id: 'own-bolt', type: 'BOLT', ownerId: 'p1', targetId: null, x: 2, y: 1, z: 0, vx: 0, vz: 50, speed: 50, life: 2, maxLife: 2, damage: 15, rearFired: false },
+  ];
+  const mineList: MineState[] = [
+    { id: 'm1', ownerId: 'ai-1', x: 5, y: 0.5, z: 5, radius: 4, life: 20, armTimer: 0, damage: 36 },
+    { id: 'm-far', ownerId: 'ai-1', x: 40, y: 0.5, z: 40, radius: 4, life: 20, armTimer: 0, damage: 36 },
+  ];
+  const bargeRes = resolveBargeInterceptions('p1', 0, 0, 12, projList, mineList);
+  assert.equal(bargeRes.destroyedProjectiles.length, 2, 'Barge must destroy nearby enemy Shunt & Bolt');
+  assert.equal(bargeRes.destroyedMines.length, 1, 'Barge must destroy nearby Mine');
+  assert.equal(projList[2].life, 2, 'Own projectile must not be destroyed by own Barge');
+  assert.equal(mineList[1].life, 20, 'Far mine must remain intact');
+
+  // 3. Shield capacity depletion & Shock depleting Shield
+  defender.shieldTimer = 6.0;
+  defender.shieldHp = COMBAT_RULES.SHIELD_CAPACITY;
+  const absorb1 = resolveShieldAbsorption(defender, 35);
+  assert.equal(absorb1.blocked, true);
+  assert.equal(absorb1.shieldBroken, false);
+  assert.equal(defender.shieldHp, 25);
+
+  const shockBlocked = resolveShockVsShield(defender);
+  assert.equal(shockBlocked, true, 'Shield must absorb Shock dome');
+  assert.equal(defender.shieldTimer, 0, 'Shock dome must immediately deplete active Shield');
+  assert.equal(defender.shieldHp, 0);
+});
+
+test('V3.0 2-stage Nitro Air-Brake slows immediately then triggers controlled exit surge', () => {
+  const track = buildTrack('neon_city');
+  const racer = makeTestRacer('p1', track);
+  racer.speed = 70;
+  racer.vx = Math.sin(racer.heading) * 70;
+  racer.vz = Math.cos(racer.heading) * 70;
+
+  resolveNitroAirBrake(racer);
+  assert.ok(racer.speed < 40, `Air-Brake must immediately drop speed, got ${racer.speed}`);
+  assert.ok((racer.airBrakeBoostTimer ?? 0) > 0, 'Air-Brake must queue delayed corner-exit boost');
+
+  // Advance physics past exit delay and verify controlled Nitro surge activates
+  for (let i = 0; i < 40; i++) {
+    stepVehiclePhysics(racer, idleInput({ throttle: 1 }), track, 1 / 60, true);
+  }
+  assert.ok(racer.nitroTimer > 0, 'Exit surge Nitro timer must trigger after Air-Brake delay');
+});
+
+test('V3.0 Handling archetypes differentiate Grippy, Drifty, and Off-Road vehicles + 10x Combo Chain', () => {
+  const track = buildTrack('neon_city');
+  const offroader = VEHICLES.find((v) => v.handlingArchetype === 'offroad');
+  const grippy = VEHICLES.find((v) => v.handlingArchetype === 'grippy');
+  const drifty = VEHICLES.find((v) => v.handlingArchetype === 'drifty');
+  assert.ok(offroader && grippy && drifty, 'Must include offroad, grippy, and drifty vehicles');
+
+  // Compare offroad Sand Runner vs Grippy Phantom X on road shoulder (near barrier edge)
+  const rOff = makeTestRacer('off', track);
+  rOff.vehicleId = offroader.id;
+  const rGrip = makeTestRacer('grip', track);
+  rGrip.vehicleId = grippy.id;
+
+  const shoulderOffset = track.def.roadWidth * 0.45;
+  const s0 = sampleTrackAt(track, 0.01);
+  const heading = Math.atan2(s0.tx, s0.tz);
+  for (const r of [rOff, rGrip]) {
+    r.x = s0.x + s0.rx * shoulderOffset;
+    r.z = s0.z + s0.rz * shoulderOffset;
+    r.trackT = 0.01;
+    r.heading = heading;
+    r.speed = 55;
+    r.vx = Math.sin(r.heading) * 55;
+    r.vz = Math.cos(r.heading) * 55;
+  }
+  for (let i = 0; i < 45; i++) {
+    stepVehiclePhysics(rOff, idleInput({ throttle: 1 }), track, 1 / 60, true);
+    stepVehiclePhysics(rGrip, idleInput({ throttle: 1 }), track, 1 / 60, true);
+  }
+  assert.ok(
+    rOff.speed > rGrip.speed * 0.9,
+    `Off-road archetype should maintain strong shoulder speed (${rOff.speed.toFixed(1)} vs ${rGrip.speed.toFixed(1)})`,
+  );
+
+  // Verify 10x Combo Chain caps cleanly at 10 moves (2.8x multiplier)
+  const comboRacer = makeTestRacer('combo', track);
+  let lastRes = applyComboFans(comboRacer, 100);
+  assert.equal(lastRes.comboCount, 1);
+  assert.equal(lastRes.multiplier, 1.0);
+  assert.equal(lastRes.awarded, 100);
+
+  for (let step = 2; step <= 12; step++) {
+    lastRes = applyComboFans(comboRacer, 100);
+  }
+  assert.equal(lastRes.comboCount, 10, 'Combo chain must cap at 10 consecutive moves');
+  assert.equal(lastRes.multiplier, 2.8);
+  assert.equal(lastRes.awarded, 280);
+});
+

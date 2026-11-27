@@ -1,4 +1,5 @@
 import type { PowerUpDefinition, PowerUpSlot, PowerUpType, RacerState } from './types';
+import { COMBAT_RULES, resolveShieldAbsorption } from './combatResolver';
 
 export const POWERUP_TYPES: PowerUpType[] = [
   'SHUNT',
@@ -70,7 +71,7 @@ export const POWERUP_DEFS: Record<PowerUpType, PowerUpDefinition> = {
   SHIELD: {
     type: 'SHIELD',
     name: 'SHIELD',
-    shortDesc: '4.5s Deflector Dome · Blocks All Hits',
+    shortDesc: '6s Deflector Barrier · Absorbs Hits & Shock',
     color: '#00D8FF',
     hexColor: 0x00d8ff,
     maxAmmo: 1,
@@ -81,7 +82,7 @@ export const POWERUP_DEFS: Record<PowerUpType, PowerUpDefinition> = {
   NITRO: {
     type: 'NITRO',
     name: 'NITRO',
-    shortDesc: 'Surge +42% · Rear = Instant Air-Brake',
+    shortDesc: 'Surge +42% · Rear = Air-Brake + Exit Boost',
     color: '#25F4A0',
     hexColor: 0x25f4a0,
     maxAmmo: 1,
@@ -92,7 +93,7 @@ export const POWERUP_DEFS: Record<PowerUpType, PowerUpDefinition> = {
   REPAIR: {
     type: 'REPAIR',
     name: 'REPAIR',
-    shortDesc: 'Instant Full Chassis Integrity Restore',
+    shortDesc: 'Restores Up To 4 Chassis Integrity Blocks',
     color: '#22C55E',
     hexColor: 0x22c55e,
     maxAmmo: 1,
@@ -103,6 +104,8 @@ export const POWERUP_DEFS: Record<PowerUpType, PowerUpDefinition> = {
 };
 
 export const POWERUP_BALANCE = {
+  HEALTH_PER_BLOCK: 20,
+  REPAIR_BLOCKS: 4, // Restores 4 segmented blocks (80 HP), clamped to maxHp
   SHUNT_DAMAGE: 28,
   SHUNT_SPEED: 112,
   SHUNT_LIFETIME: 8.5,
@@ -123,7 +126,8 @@ export const POWERUP_BALANCE = {
   SHOCK_SLOW_DURATION: 1.8,
   SHOCK_DURATION: 9.0,
   SHOCK_RADIUS: 4.5,
-  SHIELD_DURATION: 4.5,
+  SHIELD_DURATION: 6.0,
+  SHIELD_CAPACITY: COMBAT_RULES.SHIELD_CAPACITY,
   NITRO_DURATION: 3.2,
   NITRO_ACCEL_MULT: 1.9,
   NITRO_SPEED_MULT: 1.42,
@@ -217,9 +221,8 @@ export function applyCombatDamage(
     return { appliedDamage: 0, blockedByShield: false, destroyedNow: false };
   }
 
-  if (target.shieldTimer > 0) {
-    target.blocksLanded += 1;
-    target.hitFlashTimer = 0.12;
+  const shieldRes = resolveShieldAbsorption(target, amount);
+  if (shieldRes.blocked) {
     return { appliedDamage: 0, blockedByShield: true, destroyedNow: false };
   }
 
@@ -252,10 +255,12 @@ export function applyCombatDamage(
   return { appliedDamage: dmg, blockedByShield: false, destroyedNow };
 }
 
-/** Apply Repair power-up safely clamped to maxHp. */
+/** Apply Repair power-up restoring up to 4 segmented health blocks, safely clamped to maxHp. */
 export function applyRepairPowerUp(racer: RacerState): number {
-  const healed = Math.max(0, racer.maxHp - racer.hp);
-  racer.hp = racer.maxHp;
+  const maxHeal = POWERUP_BALANCE.REPAIR_BLOCKS * POWERUP_BALANCE.HEALTH_PER_BLOCK;
+  const nextHp = Math.min(racer.maxHp, racer.hp + maxHeal);
+  const healed = Math.max(0, nextHp - racer.hp);
+  racer.hp = nextHp;
   racer.shockSlowTimer = 0;
   return healed;
 }

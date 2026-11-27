@@ -131,7 +131,9 @@ export class RacingInputHub {
     else if (this.justPressed.has('Digit3')) selectSlot = 2;
 
     const instantRearFire =
-      this.justPressed.has('KeyX') || (this.justPressed.has('Space') && brakeHeld);
+      this.justPressed.has('KeyG') ||
+      this.justPressed.has('KeyX') ||
+      (this.justPressed.has('Space') && brakeHeld);
 
     const control: ControlInput = {
       throttle: gasHeld && !brakeHeld ? 1 : gasHeld ? 0.5 : 0,
@@ -139,7 +141,11 @@ export class RacingInputHub {
       steer,
       drift: this.held.has('ControlLeft') || this.held.has('KeyB') || this.touch.drift || (brakeHeld && Math.abs(steer) > 0),
       useNitro: this.justPressed.has('ShiftLeft') || this.justPressed.has('ShiftRight') || this.queuedActions.useNitro,
-      usePowerUp: this.justPressed.has('Space') || this.justPressed.has('KeyX') || this.queuedActions.usePowerUp,
+      usePowerUp:
+        this.justPressed.has('Space') ||
+        this.justPressed.has('KeyG') ||
+        this.justPressed.has('KeyX') ||
+        this.queuedActions.usePowerUp,
       cycleSlot: this.justPressed.has('KeyQ') || this.queuedActions.cycleSlot,
       discardSlot: this.justPressed.has('KeyE') || this.queuedActions.discardSlot,
       selectSlot,

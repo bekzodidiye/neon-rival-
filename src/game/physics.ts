@@ -33,6 +33,17 @@ export function stepVehiclePhysics(
   if (racer.spawnProtectTimer > 0) racer.spawnProtectTimer = Math.max(0, racer.spawnProtectTimer - dt);
   if (racer.hitFlashTimer > 0) racer.hitFlashTimer = Math.max(0, racer.hitFlashTimer - dt);
   if (racer.boltCooldown > 0) racer.boltCooldown = Math.max(0, racer.boltCooldown - dt);
+  if ((racer.comboTimer ?? 0) > 0) {
+    racer.comboTimer = Math.max(0, (racer.comboTimer ?? 0) - dt);
+    if (racer.comboTimer === 0) racer.comboCount = 0;
+  }
+  // 2-stage Blur Reverse Nitro Air-Brake: after brief rotation slow-down, fire a crisp corner-exit boost
+  if ((racer.airBrakeBoostTimer ?? 0) > 0 && !racer.destroyed) {
+    racer.airBrakeBoostTimer = Math.max(0, (racer.airBrakeBoostTimer ?? 0) - dt);
+    if (racer.airBrakeBoostTimer === 0 && canDrive) {
+      racer.nitroTimer = Math.max(racer.nitroTimer, 0.9 * stats.nitroEfficiency);
+    }
+  }
 
   // Destroyed & respawn countdown
   if (racer.destroyed) {
@@ -146,26 +157,24 @@ export function stepVehiclePhysics(
     racer.driftTime = 0;
   }
 
+  // Handling archetype simulation modifiers (V3.0 Sec 10: Grippy, Drifty, Balanced, Off-road)
+  const handlingType = vehicle.handlingArchetype ?? 'balanced';
+  const archetypeGripMult =
+    handlingType === 'grippy' ? 1.24 : handlingType === 'drifty' ? 0.78 : handlingType === 'offroad' ? 0.96 : 1.0;
+  const archetypeDriftSlip =
+    handlingType === 'drifty' ? 0.44 : handlingType === 'grippy' ? 0.22 : handlingType === 'offroad' ? 0.3 : 0.34;
+  const archetypeYawBoost =
+    handlingType === 'drifty' ? 1.12 : handlingType === 'grippy' ? 1.04 : 1.0;
+
   // Speed-dependent steering response (crisp low/mid speed, stable at 290+ km/h)
   const absSpeed = Math.abs(forwardSpeed);
   const speedFactor = Math.min(1, absSpeed / 14);
   const highSpeedDamp = 1 / (1 + Math.max(0, absSpeed - 32) * 0.014);
-  const driftSteerBoost = racer.isDrifting ? 1.28 : 1.0;
+  const driftSteerBoost = racer.isDrifting ? 1.28 * archetypeYawBoost : 1.0;
   const reverseSign = forwardSpeed >= -0.2 ? 1 : -1;
 
-  // Notice: in Three.js with heading = atan2(dx, dz), +heading rotates counter-clockwise (+X is left when looking down +Z? Wait!)
-  // Let's verify coordinate handedness carefully!
-  // Forward = (sin(h), 0, cos(h)).
-  // When h = 0, Forward = (0, 0, +1).
-  // Camera is behind car at (0, +h, -d) looking toward (0, 0, +1).
-  // From behind looking down +Z:
-  //   Left on screen is +X! Right on screen is -X!
-  // Let's verify with cross product: Right = Forward x Up = (0,0,1) x (0,1,0) = (-1, 0, 0) = -X!
-  // Therefore:
-  //   Steer Left (steerInput = -1) => want Forward to turn toward +X => increase h (+deltaHeading)!
-  //   Steer Right (steerInput = +1) => want Forward to turn toward -X => decrease h (-deltaHeading)!
   const targetYawRate = -steerInput * stats.handling * speedFactor * highSpeedDamp * driftSteerBoost * reverseSign;
-  const yawResponsiveness = racer.isDrifting ? 6.5 : 10.5;
+  const yawResponsiveness = racer.isDrifting ? (handlingType === 'drifty' ? 7.6 : 6.5) : 10.5;
   racer.angularVel += (targetYawRate - racer.angularVel) * Math.min(1, yawResponsiveness * dt);
   racer.heading += racer.angularVel * dt;
 
@@ -174,16 +183,22 @@ export function stepVehiclePhysics(
   racer.steerAngle += (targetSteerAngle - racer.steerAngle) * Math.min(1, 14 * dt);
 
   // Lateral grip & controlled drift slip
-  const gripCoeff = racer.isDrifting ? stats.grip * (0.36 + stats.driftControl * 0.12) : stats.grip;
-  // Induce controlled lateral slip when drifting
+  const baseGrip = stats.grip * archetypeGripMult;
+  const gripCoeff = racer.isDrifting ? baseGrip * (0.36 + stats.driftControl * 0.12) : baseGrip;
   if (racer.isDrifting) {
-    lateralSpeed += -steerInput * forwardSpeed * 0.34 * dt;
-    // Small speed bleed only on excessive slip
+    lateralSpeed += -steerInput * forwardSpeed * archetypeDriftSlip * dt;
+    // Small speed bleed only on excessive slip (Drifty cars lose less speed during wide drifts)
     if (Math.abs(lateralSpeed) > 14) {
-      forwardSpeed *= Math.exp(-0.45 * dt);
+      forwardSpeed *= Math.exp((handlingType === 'drifty' ? -0.28 : -0.45) * dt);
     }
   }
   lateralSpeed *= Math.exp(-gripCoeff * dt);
+
+  // Rough road-shoulder traction drag (Off-road archetype preserves traction & speed on outer curbs/shoulders!)
+  const shoulderThreshold = track.def.roadWidth * 0.5 - 3.2;
+  if (Math.abs(racer.lateralOffset) > shoulderThreshold && handlingType !== 'offroad') {
+    forwardSpeed *= Math.exp(-0.42 * dt);
+  }
 
   // Reconstruct world velocity
   const newFwdX = Math.sin(racer.heading);

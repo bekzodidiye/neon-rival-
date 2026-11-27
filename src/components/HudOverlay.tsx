@@ -182,8 +182,13 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
             <div className="hidden md:block h-9 w-px bg-white/15" />
 
             <div className="hidden md:block">
-              <div className="text-[10px] font-bold tracking-[0.22em] text-[#FF2A85] uppercase">
-                FANS
+              <div className="flex items-center gap-1.5 text-[10px] font-bold tracking-[0.22em] text-[#FF2A85] uppercase">
+                <span>FANS</span>
+                {hud.comboCount > 1 && (
+                  <span className="px-1 bg-[#FF2A85] text-[#070A12] text-[9px] tracking-wider font-mono-num">
+                    x{hud.comboCount}
+                  </span>
+                )}
               </div>
               <div className="font-mono-num font-bold text-lg sm:text-xl leading-tight text-[#F5F7FA]">
                 {hud.raceFans.toLocaleString()}
@@ -413,18 +418,22 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
             })}
           </div>
 
-          {/* Blur-Style 5-Segment Chassis Integrity + Nitro/Shield Meter */}
+          {/* Blur-Style Vehicle-Specific Segmented Chassis Integrity (5-8 Blocks) + Nitro/Shield Meter */}
           <div className="flex items-center gap-3 bg-[#070A12]/88 px-3 py-1.5 border border-white/15">
-            <div className="w-36 sm:w-44">
+            <div className="w-40 sm:w-48">
               <div className="flex justify-between text-[10px] font-mono-num font-bold mb-1">
                 <span className="text-[#94A3B8]">{t(lang, 'integrity')}</span>
                 <span style={{ color: hpPct <= 30 ? '#FF2A55' : '#25F4A0' }}>
-                  {hpPct}%
+                  {Math.ceil((hud.hp / Math.max(1, hud.maxHp)) * (hud.maxHealthBlocks || 6))}/{hud.maxHealthBlocks || 6} BLK
                 </span>
               </div>
-              <div className="grid grid-cols-5 gap-1">
-                {[0, 1, 2, 3, 4].map((seg) => {
-                  const segFill = Math.max(0, Math.min(1, (hpPct - seg * 20) / 20));
+              <div
+                className="grid gap-1"
+                style={{ gridTemplateColumns: `repeat(${hud.maxHealthBlocks || 6}, minmax(0, 1fr))` }}
+              >
+                {Array.from({ length: hud.maxHealthBlocks || 6 }, (_, seg) => {
+                  const blockSpan = 100 / (hud.maxHealthBlocks || 6);
+                  const segFill = Math.max(0, Math.min(1, (hpPct - seg * blockSpan) / blockSpan));
                   const segColor = hpPct <= 30 ? '#FF2A55' : hpPct <= 60 ? '#FF8A00' : '#25F4A0';
                   return (
                     <div key={seg} className="h-2 bg-[#141B2D] overflow-hidden skew-x-[-16deg]">

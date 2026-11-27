@@ -54,11 +54,16 @@ export const GarageDock: React.FC<GarageDockProps> = ({
               <span className="bg-[#00C8FF] text-[#070A12] font-display font-bold text-xs px-1.5 py-0.5">
                 CLASS {vehicle.vehicleClass}
               </span>
+              <span className="border border-white/25 text-[#25F4A0] font-mono-num font-bold text-[10px] px-1.5 py-0.5 uppercase">
+                {vehicle.handlingArchetype}
+              </span>
               <h1 className="font-display font-bold italic text-xl sm:text-2xl tracking-wide text-[#F5F7FA]">
                 {vehicle.name}
               </h1>
             </div>
-            <p className="text-[11px] text-[#94A3B8]">{vehicle.subtitle} · Drag viewport to rotate 360°</p>
+            <p className="text-[11px] text-[#94A3B8]">
+              {vehicle.subtitle} · {vehicle.stats.maxHealthBlocks} Armor Blocks · Drag to rotate 360°
+            </p>
           </div>
         </div>
 
@@ -153,7 +158,7 @@ export const GarageDock: React.FC<GarageDockProps> = ({
             {tab === 'vehicles' ? (
               <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
                 {/* Vehicle Selector Row */}
-                <div className="md:col-span-6 grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div className="md:col-span-7 grid grid-cols-2 sm:grid-cols-5 gap-2">
                   {VEHICLES.map((v) => {
                     const owned = profile.ownedVehicles.includes(v.id);
                     const active = v.id === vehicle.id;
@@ -186,7 +191,7 @@ export const GarageDock: React.FC<GarageDockProps> = ({
                 </div>
 
                 {/* Compact Telemetry Stat Bars */}
-                <div className="md:col-span-6 grid grid-cols-2 gap-x-4 gap-y-1.5 text-[11px] font-mono-num">
+                <div className="md:col-span-5 grid grid-cols-2 gap-x-4 gap-y-1.5 text-[11px] font-mono-num">
                   {(
                     [
                       ['SPEED', vehicle.ratings.speed, '#00C8FF'],
