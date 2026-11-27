@@ -1,0 +1,1949 @@
+# BLUR — NEXT GENERATION WEB RACING GAME
+# PRINCIPAL AI GAME DEVELOPMENT MASTER PROMPT
+
+## 1. ROLE AND RESPONSIBILITY
+
+Act as an elite professional game development team combining the expertise of:
+
+- Principal Game Developer
+- Principal Full-Stack Engineer
+- AAA Game Designer
+- Game Engine Architect
+- Vehicle Physics Engineer
+- Senior 3D Technical Artist
+- Graphics Programming Engineer
+- Multiplayer Network Engineer
+- Senior UI/UX Designer
+- Backend Architect
+- Database Architect
+- Audio Engineer
+- Cybersecurity Engineer
+- Performance Optimization Engineer
+- QA Automation Engineer
+
+Your responsibility is to build a complete, playable, high-quality 3D multiplayer racing game directly inside Google AI Studio.
+
+Do not simply provide explanations, development plans, static mockups, screenshots, or code snippets.
+
+Create the actual application, source files, game systems, user interfaces, server architecture, and playable gameplay.
+
+The application must launch and run in the browser preview.
+
+## 2. PROJECT VISION
+
+Create a next-generation browser-based arcade combat racing game inspired by Blur (2010), originally developed by Bizarre Creations.
+
+The original Blur is the primary reference for:
+
+- Arcade racing gameplay.
+- Vehicle handling.
+- Combat mechanics.
+- Power-up systems.
+- High-speed racing.
+- Real-time multiplayer.
+- Racing atmosphere.
+- Vehicle classes.
+- Competitive progression.
+- Tactical combat.
+- Neon visual effects.
+- Nighttime urban environments.
+
+Combine realistic-looking sports cars with futuristic energy weapons and high-speed arcade driving.
+
+The result must feel like a real racing game, not a simplified web animation.
+
+The project working title is NEON RIVALS.
+
+Use original branding, source code, vehicle designs, maps, music, icons, and graphical assets. Do not copy proprietary game files or use unlicensed commercial assets.
+
+## 3. PROJECT PARAMETERS
+
+- Genre: Arcade Combat Racing.
+- Platform: Web Browser.
+- Graphics: Real-time 3D.
+- Perspective: Third-person chase camera.
+- Architecture: Full-stack Web Application.
+- Target devices: Desktop, Android, iOS.
+- Mobile support: Required.
+- Orientation: Landscape.
+- Multiplayer: Real-time online.
+- Initial multiplayer capacity: 4–8 players.
+- Final multiplayer target: 20 players.
+- Vehicle classes: D, C, B, A.
+- Final vehicle target: 40 cars.
+- Final track target: 8 tracks.
+- Power-up types: 8.
+- Game modes: 10.
+- Languages: Uzbek, English, Russian.
+- Target frame rate: 60 FPS.
+- Minimum target frame rate: 30 FPS.
+- PWA support: Required.
+- Business model: Free-to-play.
+- Quality target: Commercial-grade.
+
+No APK or native application is required.
+
+The entire game must be playable through a web browser.
+
+## 4. ORIGINAL BLUR GAMEPLAY REFERENCE
+
+Understand the essential characteristics of Blur before implementing the game.
+
+Blur combines traditional arcade racing with combat-oriented collectible power-ups.
+
+Players drive around detailed racing circuits, collect energy-based abilities, attack opponents, defend against incoming attacks, repair vehicle damage, and use speed boosts.
+
+Races are not determined only by vehicle speed. Strategy, power-up selection, positioning, defensive timing, and driving skill are equally important.
+
+Preserve these gameplay pillars:
+
+1. High-speed driving.
+2. Competitive racing.
+3. Tactical power-up combat.
+4. Accessible but skill-based vehicle handling.
+5. Real-time defensive counterplay.
+6. Vehicle damage and recovery.
+7. Dynamic race positions.
+8. Competitive online multiplayer.
+9. Vehicle progression.
+10. Visually impressive energy effects.
+
+Do not turn the game into a simulator, endless runner, top-down racing game, kart racing game, or basic 2D driving application.
+
+## 5. TECHNOLOGY STACK
+
+Build the application using technologies compatible with Google AI Studio's full-stack web environment.
+
+### Frontend
+
+- React.
+- TypeScript.
+- Vite or the supported application build system.
+- Babylon.js as the preferred 3D engine, or Three.js with React Three Fiber if better supported.
+- WebGL 2.
+- WebGPU where supported.
+- Zustand or an equivalent lightweight state manager.
+- Web Audio API.
+- Responsive CSS.
+
+Choose one primary 3D rendering architecture. Do not unnecessarily combine multiple rendering engines.
+
+### Physics
+
+- Rapier or Havok where compatible.
+- Fixed timestep simulation.
+- Raycast-based vehicle suspension.
+- Arcade vehicle dynamics.
+- Custom traction and drift behavior.
+- Collision detection.
+
+### Multiplayer
+
+- Node.js server runtime.
+- WebSockets.
+- Colyseus or Socket.IO.
+- Authoritative game server.
+- Room-based multiplayer architecture.
+- Server-side game simulation.
+
+### Database
+
+Use a database supported by the Google AI Studio environment.
+
+Prefer Firebase Authentication and Firestore when available and appropriate.
+
+Alternatively, use a properly configured PostgreSQL backend.
+
+### Testing
+
+- Unit tests.
+- Integration tests.
+- Browser gameplay tests.
+- Multiplayer synchronization tests.
+- Performance measurements.
+
+Use stable and compatible dependencies.
+
+Do not require local installations or unavailable desktop software.
+
+The application must be capable of running in Google AI Studio's browser preview.
+
+## 6. APPLICATION ARCHITECTURE
+
+Separate the application into clear modules:
+
+- Application shell.
+- Game engine.
+- Renderer.
+- Scene management.
+- Vehicle system.
+- Physics system.
+- Input system.
+- Camera system.
+- Combat system.
+- Power-up system.
+- Track system.
+- Race manager.
+- AI opponent system.
+- Multiplayer networking.
+- Audio system.
+- Particle effects.
+- UI system.
+- Player progression.
+- Authentication.
+- Backend API.
+- Database services.
+- Settings.
+- Administration.
+
+Use reusable components and typed interfaces.
+
+Avoid placing the entire game inside a single React component.
+
+Keep the real-time game loop independent from React UI rendering.
+
+Use React for menus, settings, garage, player profiles, and HUD overlays.
+
+Use the 3D rendering engine for gameplay.
+
+Avoid updating React state every frame.
+
+## 7. ART DIRECTION
+
+Create a premium visual style inspired by realistic nighttime street racing combined with futuristic energy combat.
+
+### Primary visual atmosphere
+
+- Dark urban environments.
+- Cinematic lighting.
+- Neon blue.
+- Electric purple.
+- Cyan energy effects.
+- Deep black backgrounds.
+- Metallic vehicle reflections.
+- Wet asphalt.
+- Realistic road markings.
+- Illuminated skyscrapers.
+- Urban tunnels.
+- Industrial environments.
+- Dynamic headlights.
+- High-speed motion effects.
+
+The graphics must feel modern and visually rich.
+
+Avoid:
+
+- Plain cube-shaped cars.
+- Empty roads.
+- Primitive-only environments.
+- Flat lighting.
+- Cartoonish toy vehicles.
+- Excessively simple geometry.
+- Placeholder graphics presented as final assets.
+- Fake 3D using only flat CSS.
+- Static gameplay images.
+
+All gameplay must be rendered in real time.
+
+## 8. THREE-DIMENSIONAL GRAPHICS
+
+Implement a real 3D scene with:
+
+- Perspective camera.
+- Ground geometry.
+- Road geometry.
+- Buildings.
+- Environment meshes.
+- Vehicles.
+- Lighting.
+- Shadows.
+- Materials.
+- Particle systems.
+- Post-processing.
+
+Support:
+
+- Physically based rendering.
+- Metallic materials.
+- Roughness materials.
+- Normal maps.
+- Environment reflections.
+- Bloom.
+- Tone mapping.
+- Anti-aliasing.
+- Fog.
+- Motion blur where supported.
+- Screen-space visual effects.
+- Dynamic resolution.
+
+Use optimized GLB or glTF models where legally available.
+
+If suitable models are not available, construct detailed original procedural vehicle meshes with recognizable sports-car silhouettes.
+
+Procedural models must include:
+
+- Detailed vehicle body.
+- Hood.
+- Roof.
+- Windshield.
+- Rear window.
+- Side windows.
+- Wheel arches.
+- Four separate wheels.
+- Tires.
+- Wheel rims.
+- Headlights.
+- Brake lights.
+- Front bumper.
+- Rear bumper.
+- Air intakes.
+- Spoiler where appropriate.
+
+Temporary placeholder models may be used only during development.
+
+Do not stop development solely because external 3D assets are unavailable.
+
+## 9. VEHICLE SYSTEM
+
+Build a complete vehicle architecture.
+
+Every vehicle must have configurable properties:
+
+- Vehicle ID.
+- Name.
+- Class.
+- Maximum speed.
+- Acceleration.
+- Engine power.
+- Torque.
+- Weight.
+- Braking force.
+- Steering response.
+- Grip.
+- Drift characteristics.
+- Traction.
+- Stability.
+- Durability.
+- Nitro efficiency.
+- Suspension settings.
+
+Use configuration-driven vehicle definitions.
+
+Do not duplicate vehicle logic for every car.
+
+### Initial vehicle lineup
+
+Create at least three distinct vehicles:
+
+1. STREET FALCON — balanced sport coupe.
+2. NIGHT VIPER — high-speed muscle car.
+3. PHANTOM X — advanced supercar.
+
+Each vehicle must have visibly different body geometry, performance characteristics, and handling.
+
+### Final vehicle classes
+
+D Class:
+
+- Beginner-friendly vehicles.
+- Predictable handling.
+- Moderate maximum speed.
+
+C Class:
+
+- Performance sports cars.
+- Better acceleration and drift.
+
+B Class:
+
+- High-performance supercars.
+- Faster speed and more demanding handling.
+
+A Class:
+
+- Elite supercars and hypercars.
+- Maximum performance.
+
+Target 10 vehicles per class during content expansion.
+
+## 10. VEHICLE PHYSICS
+
+Develop responsive arcade vehicle physics.
+
+The driving experience must provide:
+
+- Weight.
+- Momentum.
+- Acceleration.
+- Deceleration.
+- Steering.
+- Cornering.
+- Inertia.
+- Traction loss.
+- Drift.
+- Collision response.
+
+Implement:
+
+- Forward acceleration.
+- Reverse gear.
+- Brake force.
+- Maximum velocity.
+- Speed-dependent steering.
+- Lateral tire friction.
+- Longitudinal friction.
+- Weight transfer approximation.
+- Raycast suspension or equivalent.
+- Surface-dependent traction.
+- Vehicle recovery.
+- Airborne vehicle behavior.
+- Landing response.
+
+Vehicles must not feel like objects sliding on a flat surface.
+
+Wheels must rotate according to vehicle speed.
+
+Front wheels must visually steer.
+
+The car body should react to acceleration, braking, cornering, and impacts.
+
+### Drift mechanics
+
+Implement controllable arcade drifting:
+
+- Initiation through braking or drift input.
+- Rear traction reduction.
+- Steering correction.
+- Controlled lateral slip.
+- Drift angle.
+- Speed loss during excessive sliding.
+- Drift recovery.
+- Tire smoke.
+- Tire marks.
+- Drift audio.
+
+Drifting must remain controllable and useful during racing.
+
+### Nitro physics
+
+Nitro must temporarily increase acceleration and maximum speed.
+
+Add:
+
+- Increased engine sound.
+- Exhaust energy effects.
+- Camera field-of-view expansion.
+- Speed lines.
+- Motion effects.
+
+## 11. CAMERA SYSTEM
+
+Implement a professional third-person racing camera.
+
+The default camera must follow the player's vehicle from behind and slightly above.
+
+Camera features:
+
+- Smooth follow.
+- Spring-based movement.
+- Velocity-based look-ahead.
+- Speed-based FOV.
+- Cornering anticipation.
+- Collision avoidance.
+- Impact shake.
+- Nitro shake.
+- Drift-responsive rotation.
+- Camera reset.
+- Rear-view camera.
+- Multiple camera distances.
+
+Optional camera modes:
+
+- Near chase camera.
+- Far chase camera.
+- Hood camera.
+- Cinematic replay camera.
+
+The camera must never continuously clip through buildings, terrain, or vehicles.
+
+Camera movement must remain smooth at high speeds.
+
+## 12. POWER-UP SYSTEM
+
+Implement the eight essential Blur-inspired power-up types.
+
+All abilities must have original visual designs, icons, sounds, and animations.
+
+The following numerical values are initial balancing proposals, not exact original Blur parameters. Store them in configurable data and tune through gameplay testing.
+
+### 12.1 SHUNT
+
+Type: Homing energy projectile.
+
+Visual identity: Red energy sphere.
+
+Behavior:
+
+- Acquire a valid opponent ahead.
+- Launch a visible energy projectile.
+- Track the selected opponent.
+- Move along a physically plausible trajectory.
+- Apply damage and knockback on impact.
+- Reduce target speed.
+- Display an incoming attack warning.
+- Allow defensive counterplay.
+- Support backward firing without forward-style homing.
+
+Initial balancing:
+
+- Damage: 25 HP.
+- Projectile speed: 85 m/s.
+- Maximum lifetime: 8 seconds.
+
+Visual effects:
+
+- Red energy trail.
+- Glowing projectile core.
+- Impact sparks.
+- Energy distortion.
+- Camera shake.
+
+### 12.2 BOLT
+
+Type: Rapid-fire energy projectile.
+
+Visual identity: Orange energy projectiles.
+
+Behavior:
+
+- Collect one Bolt power-up.
+- Receive three individual shots.
+- Fire each shot separately.
+- Travel in the firing direction.
+- Do not automatically home onto opponents.
+- Support forward and backward firing.
+- Allow skilled players to intercept incoming projectiles.
+
+Initial balancing:
+
+- Shots: 3.
+- Damage per shot: 10 HP.
+- Shot interval: 0.25 seconds.
+- Projectile speed: 120 m/s.
+
+### 12.3 BARGE
+
+Type: Close-range energy shockwave.
+
+Visual identity: Purple expanding energy wave.
+
+Behavior:
+
+- Release a radial energy pulse around the player's vehicle.
+- Push nearby opponents away.
+- Interrupt nearby attackers.
+- Apply damage.
+- Intercept compatible incoming projectiles.
+- Use distance-based impact strength.
+
+Initial balancing:
+
+- Radius: 9 meters.
+- Damage: 18 HP.
+- Strongest knockback near the source.
+
+### 12.4 MINE
+
+Type: Stationary energy trap.
+
+Visual identity: Yellow-orange energy sphere.
+
+Behavior:
+
+- Deploy an energy mine behind the car or in an allowed forward direction.
+- Activate after a short delay.
+- Remain visible to other players.
+- Trigger when an opponent enters its collision area.
+- Explode and apply damage.
+- Remove the mine after activation or lifetime expiration.
+
+Initial balancing:
+
+- Damage: 25 HP.
+- Activation delay: 0.5 seconds.
+- Trigger radius: 2 meters.
+- Lifetime: 20 seconds.
+
+### 12.5 SHOCK
+
+Type: Track-based electric hazard.
+
+Visual identity: Blue electric energy domes.
+
+Behavior:
+
+- Identify the current race leader.
+- Find valid track positions ahead of the leader.
+- Spawn three electric hazard zones.
+- Warn players approaching the hazards.
+- Allow players to avoid hazards through skillful driving.
+- Apply damage and temporary speed reduction when hit.
+
+Initial balancing:
+
+- Hazard count: 3.
+- Damage per hazard: 15 HP.
+- Slowdown duration: 1.5 seconds.
+- Hazard duration: 8 seconds.
+
+### 12.6 SHIELD
+
+Type: Temporary defensive energy barrier.
+
+Visual identity: Transparent cyan-blue energy dome.
+
+Behavior:
+
+- Surround the player's vehicle with an energy shield.
+- Block supported incoming power-up damage.
+- Display a visual reaction on impact.
+- Expire after its duration.
+- Provide meaningful defensive timing.
+
+Initial balancing:
+
+- Duration: 4 seconds.
+
+Visual effects:
+
+- Transparent energy surface.
+- Hexagonal or original geometric energy patterns.
+- Electric edge glow.
+- Impact ripple.
+- Shield expiration animation.
+
+### 12.7 NITRO
+
+Type: Temporary speed enhancement.
+
+Visual identity: Green-blue energy boost.
+
+Behavior:
+
+- Increase acceleration.
+- Increase maximum speed.
+- Create energy trails.
+- Expand camera FOV.
+- Support an optional defensive airbrake-style alternative activation.
+- Return vehicle performance smoothly to normal after expiration.
+
+Initial balancing:
+
+- Duration: 3 seconds.
+- Acceleration multiplier: 1.6.
+- Maximum speed multiplier: 1.3.
+
+### 12.8 REPAIR
+
+Type: Vehicle restoration.
+
+Visual identity: Green repair energy.
+
+Behavior:
+
+- Restore lost vehicle health.
+- Trigger repair particles.
+- Update vehicle damage visuals.
+- Never exceed maximum vehicle health.
+
+Initial balancing:
+
+- Restore vehicle health to maximum.
+
+## 13. POWER-UP INVENTORY
+
+Implement a three-slot inventory.
+
+Players can:
+
+- Collect power-ups from the track.
+- Store up to three power-ups.
+- Select a specific slot.
+- Cycle between slots.
+- Activate the selected power-up.
+- Fire supported projectiles forward or backward.
+- Discard an unwanted power-up.
+
+Power-up pickups must:
+
+- Exist in the 3D world.
+- Have recognizable original visual shapes.
+- Rotate or animate.
+- Glow according to their type.
+- Trigger only through valid vehicle interaction.
+- Respawn using configurable rules.
+- Prevent duplicate collection.
+
+In multiplayer, the server must validate all pickups and activations.
+
+A client must not be able to grant itself unlimited abilities.
+
+## 14. DAMAGE SYSTEM
+
+Every vehicle begins with configurable maximum health, initially 100 HP.
+
+Damage sources:
+
+- Power-up hits.
+- Strong collisions.
+- Environmental hazards.
+- Arena attacks.
+
+Implement:
+
+- Health tracking.
+- Damage events.
+- Shield interaction.
+- Vehicle damage states.
+- Smoke effects.
+- Sparks.
+- Destroyed vehicle state.
+- Temporary loss of control after major impacts.
+- Race respawn.
+- Temporary spawn protection.
+- Repair interaction.
+
+When health reaches zero:
+
+- Trigger a vehicle destruction effect.
+- Apply a configurable race penalty.
+- Respawn at a valid safe location.
+- Prevent checkpoint skipping.
+
+Health and race penalties must be controlled by the authoritative server during multiplayer.
+
+## 15. TRACK SYSTEM
+
+Build original fully three-dimensional racing circuits.
+
+### First track: NEON CITY
+
+Create a polished nighttime city racing environment.
+
+Initial target specifications:
+
+- Track length: approximately 2.5–4 kilometers.
+- Race duration: approximately 3–5 minutes.
+- Default laps: 3.
+- Multiple wide straights.
+- Fast corners.
+- Technical corners.
+- Urban intersections.
+- Tunnel sections.
+- Neon-lit buildings.
+- Roadside barriers.
+- Overhead structures.
+- Alternative racing lines.
+- Power-up placement.
+- Start and finish area.
+- Dynamic street lighting.
+
+The road must be continuous and physically driveable.
+
+The car must not fall through the road or drive through building geometry.
+
+Generate the track using splines or another appropriate geometry system.
+
+Create:
+
+- Road mesh.
+- Track borders.
+- Collision barriers.
+- Lane markings.
+- Roadside geometry.
+- Checkpoints.
+- Track direction.
+- Racing line.
+- AI navigation path.
+- Spawn positions.
+- Respawn positions.
+- Power-up locations.
+
+### Future tracks
+
+1. Neon City — nighttime metropolis.
+2. Industrial Port — shipping containers and docks.
+3. Desert Storm — desert highways and canyons.
+4. Midnight Streets — rainy urban district.
+5. Frozen Peak — snowy mountain roads.
+6. Ocean Drive — coastal highway.
+7. Underground — interconnected tunnels.
+8. Airfield Arena — abandoned airport.
+
+Each track must offer different driving challenges and atmosphere.
+
+## 16. RACE MANAGEMENT
+
+Implement a complete race state machine.
+
+States:
+
+- Waiting.
+- Lobby.
+- Loading.
+- Countdown.
+- Racing.
+- Finished.
+- Results.
+- Closed.
+
+Before the race:
+
+- Load vehicles.
+- Load track assets.
+- Prepare spawn positions.
+- Initialize physics.
+- Synchronize players.
+- Display a 3-2-1 countdown.
+
+During the race:
+
+- Track elapsed time.
+- Validate checkpoints.
+- Count completed laps.
+- Calculate race positions.
+- Detect wrong-way driving.
+- Process combat.
+- Track vehicle health.
+- Track race events.
+
+Race position must be based on completed laps, valid checkpoints, and progress along the track.
+
+Do not calculate race positions only by distance from the finish line.
+
+After the race:
+
+- Lock final results.
+- Display finishing positions.
+- Display race duration.
+- Display combat statistics.
+- Calculate rewards.
+- Save progression.
+- Offer replay or return to menu.
+
+## 17. AI OPPONENTS
+
+Create intelligent AI-controlled racing vehicles.
+
+Bots must:
+
+- Follow valid racing lines.
+- Steer naturally.
+- Accelerate on straight roads.
+- Brake before difficult corners.
+- Avoid obstacles.
+- Recover from collisions.
+- Overtake slower opponents.
+- Collect power-ups.
+- Use offensive abilities.
+- Use defensive abilities.
+- Use nitro strategically.
+- Avoid electric hazards when possible.
+- Complete checkpoints correctly.
+
+Difficulty levels:
+
+- Easy.
+- Normal.
+- Hard.
+- Expert.
+
+Difficulty must influence skill, reaction time, driving accuracy, braking, and combat decision-making.
+
+Do not rely on visible teleportation or unlimited speed.
+
+The initial offline race should support one player and seven AI opponents.
+
+## 18. MULTIPLAYER SYSTEM
+
+Implement actual networked multiplayer.
+
+The game must support multiple real users connected to the same race.
+
+Do not simulate multiplayer using only local bots.
+
+### Multiplayer features
+
+- Player connections.
+- Player identity.
+- Public matchmaking.
+- Private rooms.
+- Room invite codes.
+- Lobby management.
+- Ready status.
+- Host controls.
+- Match countdown.
+- Race synchronization.
+- Networked vehicles.
+- Networked projectiles.
+- Networked power-up pickups.
+- Damage synchronization.
+- Lap synchronization.
+- Race result synchronization.
+- Player disconnects.
+- Reconnection.
+- Server-side race validation.
+
+### Server authority
+
+The server controls:
+
+- Valid vehicle movement.
+- Maximum speed.
+- Power-up ownership.
+- Power-up activation.
+- Projectile creation.
+- Combat damage.
+- Vehicle health.
+- Shield duration.
+- Respawn positions.
+- Checkpoint validation.
+- Race results.
+- Player rewards.
+
+Clients send validated input commands.
+
+Clients must not directly define authoritative health, race position, currency, or rewards.
+
+### Network architecture
+
+Use:
+
+- Fixed server timestep.
+- Target simulation rate: 30 Hz.
+- Input sequence numbers.
+- Snapshot replication.
+- Client-side prediction.
+- Server reconciliation.
+- Remote vehicle interpolation.
+- Network latency measurements.
+- Reconnection handling.
+- Input rate limiting.
+
+Start with two real browser clients.
+
+Expand to 4–8 players after successful synchronization tests.
+
+Treat 20 players as the final scalability target.
+
+If the preview environment has networking limitations, implement and document a compatible server deployment solution.
+
+Do not falsely label local gameplay as online multiplayer.
+
+## 19. GAME MODES
+
+Create the following modes in stages.
+
+### Combat Race
+
+Standard competitive racing with all eight power-up types.
+
+### Pure Race
+
+Racing without combat power-ups.
+
+### Destruction Arena
+
+Vehicles compete in an arena using combat abilities.
+
+### Team Race
+
+Two teams compete through race placement and teamwork.
+
+### Team Battle
+
+Team-based vehicle combat.
+
+### Elimination
+
+The lowest-ranked driver is eliminated at configured intervals.
+
+### Time Trial
+
+Race against personal records and optional ghost vehicles.
+
+### Ranked
+
+Competitive matchmaking with skill-based rankings.
+
+### Private Room
+
+Create or join rooms using invitation codes.
+
+### Training
+
+Offline practice against AI opponents.
+
+The initial playable version must prioritize Combat Race, Training, and Private Room.
+
+## 20. CAREER AND PROGRESSION
+
+Implement a career system inspired by arcade racing progression.
+
+Create:
+
+- Player level.
+- Experience points.
+- Fan points or an original reputation system.
+- Race medals.
+- Race objectives.
+- Vehicle unlocks.
+- Track unlocks.
+- Career stages.
+- Rival challenges.
+- Daily challenges.
+- Weekly challenges.
+- Achievements.
+- Seasonal progression.
+
+Example career objectives:
+
+- Finish in first place.
+- Finish in the top three.
+- Successfully use defensive abilities.
+- Destroy an opponent vehicle.
+- Complete a drift challenge.
+- Complete a race without destruction.
+- Defeat a rival.
+- Achieve a target lap time.
+
+Create original career events and rival drivers.
+
+Rewards must be granted only after valid race completion.
+
+## 21. GARAGE SYSTEM
+
+Create a professional interactive 3D garage.
+
+The garage must contain:
+
+- Large real-time 3D vehicle preview.
+- Rotatable camera.
+- Premium lighting.
+- Reflective floor.
+- Vehicle name.
+- Vehicle class.
+- Performance statistics.
+- Unlock status.
+- Purchase or unlock action.
+- Vehicle selection.
+- Customization controls.
+
+Display vehicle statistics:
+
+- Speed.
+- Acceleration.
+- Handling.
+- Grip.
+- Drift.
+- Durability.
+- Nitro.
+
+Provide smooth transitions when selecting different vehicles.
+
+Do not use static poster images as a substitute for the 3D garage.
+
+## 22. VEHICLE CUSTOMIZATION
+
+Allow players to customize:
+
+- Body color.
+- Metallic paint.
+- Matte paint.
+- Wheel rims.
+- Wheel colors.
+- Neon underglow.
+- Decals.
+- Spoilers.
+- Body kits.
+- Window tint.
+- Headlight colors.
+- Nitro trail colors.
+- Cosmetic skins.
+
+Customization changes must update the 3D model in real time.
+
+Store vehicle customization in the player profile.
+
+Paid customization must not create unfair competitive advantages.
+
+## 23. UI/UX DESIGN DIRECTION
+
+Create an AAA-inspired racing game interface.
+
+Design principles:
+
+- Cinematic.
+- Premium.
+- Minimalistic.
+- Dark.
+- High contrast.
+- Futuristic.
+- Competitive.
+- Responsive.
+
+Color palette:
+
+- Background: #070A12.
+- Secondary background: #101522.
+- Electric blue: #00C8FF.
+- Neon purple: #8B5CF6.
+- Accent green: #25F4A0.
+- Warning red: #FF365E.
+- Text: #F5F7FA.
+
+Use strong typography, subtle gradients, glass-like surfaces, angular racing-inspired components, and polished animations.
+
+Avoid generic corporate dashboard layouts.
+
+The game should visually resemble a professional racing game, not an administration website.
+
+All primary buttons must function.
+
+## 24. COMPLETE APPLICATION SCREENS
+
+Create the following screens.
+
+### 01 — Splash Screen
+
+Animated original game logo, loading progress, cinematic atmosphere.
+
+### 02 — Authentication
+
+Login, registration, guest play, validation, error handling.
+
+### 03 — Main Menu
+
+Large 3D vehicle background with navigation:
+
+- Quick Race.
+- Multiplayer.
+- Career.
+- Garage.
+- Leaderboard.
+- Settings.
+
+### 04 — Garage
+
+Interactive real-time vehicle preview and vehicle information.
+
+### 05 — Car Selection
+
+Vehicle classes, locked vehicles, statistics, selection.
+
+### 06 — Customization
+
+Real-time paint, wheel, skin and cosmetic controls.
+
+### 07 — Upgrade
+
+Balanced vehicle progression and permitted upgrades.
+
+### 08 — Game Mode Selection
+
+Visual cards for all game modes.
+
+### 09 — Track Selection
+
+Track preview, environment details, lap configuration.
+
+### 10 — Multiplayer Lobby
+
+Connected players, ready status, room settings.
+
+### 11 — Matchmaking
+
+Searching state, cancel action, player count, network status.
+
+### 12 — Private Room
+
+Create room, join room, copy invitation code.
+
+### 13 — Loading Screen
+
+Real loading progress and gameplay tips.
+
+### 14 — Gameplay
+
+Full-screen interactive 3D racing.
+
+### 15 — Pause Menu
+
+Resume, settings, restart offline race, exit.
+
+Multiplayer races must not pause the entire server.
+
+### 16 — Race Results
+
+Finishing position, time, rewards, combat statistics.
+
+### 17 — Leaderboard
+
+Global, seasonal and friend rankings.
+
+### 18 — Player Profile
+
+Statistics, level, achievements and progression.
+
+### 19 — Friends
+
+Search users, friend requests and online status.
+
+### 20 — Achievements
+
+Achievement requirements and completion progress.
+
+### 21 — Daily Missions
+
+Daily challenges and rewards.
+
+### 22 — Season Pass
+
+Seasonal progression and cosmetic rewards.
+
+### 23 — Shop
+
+Original cosmetic items and vehicle customization.
+
+### 24 — Settings
+
+Graphics, controls, sound, language and accessibility.
+
+### 25 — Help Center
+
+Gameplay instructions, power-up descriptions and troubleshooting.
+
+Every relevant screen must handle:
+
+- Loading state.
+- Empty state.
+- Success state.
+- Error state.
+- Responsive layout.
+
+Do not prioritize creating all screens before implementing playable gameplay.
+
+## 25. GAMEPLAY HUD
+
+Create a professional racing HUD.
+
+Top-left:
+
+- Current race position.
+- Total players.
+- Current lap.
+- Total laps.
+- Race timer.
+
+Top-right:
+
+- Vehicle speed.
+- Speed unit.
+- Optional FPS.
+- Network ping.
+
+Bottom-center:
+
+- Three power-up inventory slots.
+- Selected power-up indicator.
+- Remaining ammunition.
+
+Additional elements:
+
+- Health bar.
+- Nitro indicator.
+- Shield status.
+- Incoming attack warning.
+- Mini-map.
+- Opponent markers.
+- Wrong-way warning.
+- Countdown.
+- Final lap notification.
+- Race finished notification.
+
+The HUD must be readable during high-speed racing.
+
+Do not obstruct the player's view of the road.
+
+## 26. DESKTOP CONTROLS
+
+Default controls:
+
+- W / Up Arrow: Accelerate.
+- S / Down Arrow: Brake and reverse.
+- A / Left Arrow: Steer left.
+- D / Right Arrow: Steer right.
+- Shift: Activate equipped Nitro when available.
+- Space: Use selected power-up.
+- Q: Cycle power-up slots.
+- E: Discard selected power-up.
+- 1, 2, 3: Select inventory slot.
+- F: Toggle forward or backward targeting.
+- C: Change camera.
+- R: Recover vehicle.
+- V: Rear-view camera.
+- Escape: Pause offline gameplay or open menu.
+
+Support configurable key bindings.
+
+Prevent accidental browser scrolling during gameplay.
+
+Reset pressed keys when browser focus is lost.
+
+## 27. MOBILE CONTROLS
+
+Create a landscape mobile control system.
+
+Left side:
+
+- Steering buttons or virtual joystick.
+
+Right side:
+
+- Accelerate.
+- Brake.
+- Power-up activation.
+- Nitro.
+
+Bottom-center:
+
+- Three selectable power-up slots.
+
+Additional options:
+
+- Automatic acceleration.
+- Tilt steering when device permissions allow it.
+- Adjustable control sensitivity.
+- Customizable button positions.
+- Left-handed layout.
+- Control opacity.
+
+Support simultaneous multi-touch inputs.
+
+For example, the player must be able to accelerate, steer and use a power-up simultaneously.
+
+Mobile gameplay must not depend on keyboard controls.
+
+## 28. AUDIO SYSTEM
+
+Implement dynamic racing audio using Web Audio API.
+
+Required sound categories:
+
+- Engine idle.
+- Engine acceleration.
+- Gear shifting.
+- High-speed engine sound.
+- Tire screech.
+- Drift sound.
+- Collision sound.
+- Nitro activation.
+- Power-up collection.
+- Shunt launch.
+- Bolt launch.
+- Barge shockwave.
+- Mine explosion.
+- Shock electric hazard.
+- Shield activation.
+- Shield impact.
+- Repair activation.
+- Countdown.
+- Finish.
+- Menu interaction.
+- Environmental ambience.
+
+Engine sound must respond to speed and simulated RPM.
+
+Use spatial audio where appropriate.
+
+Support separate volume settings for:
+
+- Master volume.
+- Engine.
+- Effects.
+- Music.
+- UI.
+
+Respect browser audio autoplay restrictions.
+
+Activate audio after valid user interaction.
+
+Use original procedural audio or properly licensed audio resources.
+
+## 29. BACKEND ARCHITECTURE
+
+Create a real server-side application.
+
+Backend modules:
+
+- Authentication.
+- Users.
+- Player profiles.
+- Vehicles.
+- Garage.
+- Customization.
+- Inventory.
+- Matchmaking.
+- Game rooms.
+- Matches.
+- Race results.
+- Rewards.
+- Progression.
+- Leaderboards.
+- Friends.
+- Achievements.
+- Missions.
+- Shop.
+- Seasons.
+- Settings.
+
+Provide clear typed API contracts.
+
+Validate all input data.
+
+Implement structured error responses.
+
+Keep sensitive credentials on the server.
+
+Do not expose database administration credentials in the frontend.
+
+## 30. DATABASE SYSTEM
+
+Create persistent data structures for:
+
+- Users.
+- Player profiles.
+- Sessions.
+- Vehicles.
+- Vehicle classes.
+- Player-owned vehicles.
+- Customizations.
+- Tracks.
+- Game modes.
+- Matches.
+- Match participants.
+- Race results.
+- Achievements.
+- Player achievements.
+- Leaderboards.
+- Seasons.
+- Missions.
+- Player missions.
+- Currencies.
+- Wallet transactions.
+- Shop items.
+- Purchases.
+- Friendships.
+- Player settings.
+- Audit logs.
+
+Use secure access rules.
+
+Prevent clients from directly modifying race results, premium currency, and authoritative rewards.
+
+Use transactional operations for economic updates.
+
+Prevent duplicate reward claims.
+
+Guest mode may initially use local storage, but authenticated multiplayer progression must use real persistent server storage.
+
+Clearly distinguish local data from server-persisted data.
+
+## 31. GAME ECONOMY
+
+Create a fair progression-based economy.
+
+Currency types:
+
+- Credits earned from gameplay.
+- Optional premium cosmetic currency.
+
+Players earn rewards through:
+
+- Race completion.
+- Race placement.
+- Career objectives.
+- Daily missions.
+- Achievements.
+- Seasonal challenges.
+
+Players can unlock:
+
+- Vehicles.
+- Paint colors.
+- Rims.
+- Decals.
+- Nitro trails.
+- Cosmetic skins.
+
+Avoid pay-to-win mechanics.
+
+Do not activate real-money transactions without explicit authorization.
+
+## 32. SECURITY AND ANTI-CHEAT
+
+Implement protection against:
+
+- Speed manipulation.
+- Teleportation.
+- Infinite nitro.
+- Infinite power-ups.
+- Health manipulation.
+- Fake race results.
+- Invalid checkpoint progression.
+- Duplicate rewards.
+- Unauthorized account access.
+- WebSocket flooding.
+- API abuse.
+- Invalid input messages.
+- XSS.
+- Injection attacks.
+- Session abuse.
+
+Use:
+
+- Server-authoritative simulation.
+- Input validation.
+- Movement validation.
+- Rate limits.
+- Secure authentication.
+- Access controls.
+- Secure database rules.
+- Server-side reward calculations.
+- Audit logs.
+
+Never store API keys directly inside client-side source code.
+
+Do not require a generative AI API call for every frame, physics update, bot decision or gameplay event.
+
+Core gameplay must operate independently of generative AI services.
+
+## 33. PERFORMANCE OPTIMIZATION
+
+Target smooth gameplay across desktop and mobile browsers.
+
+Implement:
+
+- Level of detail.
+- Mesh instancing.
+- Frustum culling.
+- Object pooling.
+- Particle pooling.
+- Texture compression.
+- Mesh optimization.
+- Reduced draw calls.
+- Asset caching.
+- Asynchronous asset loading.
+- Lazy loading.
+- Dynamic resolution.
+- Adaptive effects.
+- Optimized collision geometry.
+- Efficient game loops.
+- Reduced React re-rendering.
+- Network snapshot compression.
+
+Graphics presets:
+
+### Low
+
+- Reduced shadows.
+- Reduced particles.
+- Lower render resolution.
+- Simplified reflections.
+- Minimal post-processing.
+
+### Medium
+
+- Balanced lighting.
+- Moderate particle effects.
+- Basic bloom.
+- Medium render resolution.
+
+### High
+
+- Detailed materials.
+- Improved shadows.
+- Enhanced bloom.
+- Increased particles.
+- Higher render resolution.
+
+### Ultra
+
+- Maximum supported visual quality.
+- Advanced reflections.
+- High-quality shadows.
+- Full visual effects where performance allows.
+
+The game must adapt to available hardware.
+
+Display actual FPS measurements.
+
+Never present target FPS as measured performance.
+
+## 34. PWA SUPPORT
+
+Make the game installable as a Progressive Web App where supported.
+
+Include:
+
+- Web app manifest.
+- Original application icons.
+- Service worker.
+- Fullscreen support.
+- Landscape orientation preference.
+- Responsive layouts.
+- Asset caching.
+- Update handling.
+- Offline fallback.
+
+Online multiplayer requires an internet connection.
+
+Offline training mode should remain available when the necessary assets have been cached.
+
+## 35. IMPLEMENTATION ROADMAP
+
+Build the game through verified development stages.
+
+### PHASE 1 — PLAYABLE FOUNDATION
+
+Immediately implement:
+
+- Real 3D renderer.
+- One detailed original car.
+- A continuous driveable 3D track.
+- Vehicle controls.
+- Vehicle physics.
+- Chase camera.
+- Basic lighting.
+- Speedometer.
+- Working restart.
+
+Acceptance criteria:
+
+The player can drive around a complete 3D racing circuit in the browser preview.
+
+### PHASE 2 — COMPLETE RACE
+
+Implement:
+
+- Start countdown.
+- Seven AI opponents.
+- Checkpoints.
+- Three laps.
+- Race positions.
+- Race timer.
+- Vehicle collisions.
+- Finish detection.
+- Results screen.
+
+Acceptance criteria:
+
+A complete race can be played from start to finish.
+
+### PHASE 3 — COMBAT GAMEPLAY
+
+Implement:
+
+- All eight power-ups.
+- Three-slot inventory.
+- Energy projectiles.
+- Damage.
+- Shield.
+- Repair.
+- Nitro.
+- Visual effects.
+- Sound effects.
+
+Acceptance criteria:
+
+The player and AI opponents can collect and use abilities during a complete race.
+
+### PHASE 4 — GRAPHICS AND VEHICLES
+
+Implement:
+
+- Three detailed vehicle designs.
+- Improved vehicle materials.
+- Professional nighttime city.
+- Road markings.
+- Buildings.
+- Tunnels.
+- Neon lighting.
+- Particle effects.
+- Garage preview.
+
+Acceptance criteria:
+
+The game visually communicates the intended premium arcade racing style.
+
+### PHASE 5 — MULTIPLAYER
+
+Implement:
+
+- Real server.
+- WebSocket connections.
+- Multiplayer rooms.
+- Lobby.
+- Vehicle synchronization.
+- Combat synchronization.
+- Server authority.
+- Reconnection.
+
+Acceptance criteria:
+
+At least two separate browser clients can join the same race and interact in real time.
+
+### PHASE 6 — FULL PRODUCT SYSTEMS
+
+Implement:
+
+- Player authentication.
+- Persistent profiles.
+- Garage.
+- Vehicle unlocks.
+- Career progression.
+- Rewards.
+- Leaderboards.
+- Customization.
+- Settings.
+
+### PHASE 7 — CONTENT EXPANSION
+
+Add:
+
+- More vehicles.
+- More tracks.
+- Additional game modes.
+- Achievements.
+- Missions.
+- Seasons.
+- Cosmetic items.
+
+### PHASE 8 — QUALITY ASSURANCE
+
+Complete:
+
+- Browser compatibility testing.
+- Mobile testing.
+- Physics testing.
+- Multiplayer testing.
+- Security testing.
+- Performance optimization.
+- Visual improvements.
+- Bug fixes.
+
+### PHASE 9 — RELEASE
+
+Complete:
+
+- Production build.
+- Deployment configuration.
+- HTTPS and secure networking.
+- Documentation.
+- Final acceptance tests.
+
+## 36. FIRST BUILD REQUIREMENTS
+
+The first implementation must already be playable.
+
+Do not spend the entire first build creating menus, documentation, or mockups.
+
+The first browser preview must contain:
+
+- A functional main menu.
+- A working Play button.
+- A real-time 3D car.
+- A complete driveable road.
+- A third-person chase camera.
+- Keyboard controls.
+- Mobile touch controls.
+- Acceleration.
+- Braking.
+- Steering.
+- Basic drift.
+- Vehicle recovery.
+- At least one opponent.
+- Speed indicator.
+- A basic race objective.
+
+After the playable foundation works, expand the game according to the roadmap.
+
+Do not create a beautiful landing page that claims to be a game while providing no playable racing.
+
+## 37. TESTING AND VALIDATION
+
+Test the actual implementation.
+
+Required gameplay tests:
+
+- Vehicle acceleration works.
+- Braking works.
+- Steering works.
+- Drift works.
+- Collision works.
+- Vehicle recovery works.
+- Checkpoints work.
+- Lap counting works.
+- Race positions update correctly.
+- Race completion works.
+- Power-up collection works.
+- Each power-up activates correctly.
+- Damage works.
+- Shield blocks supported damage.
+- Repair restores health.
+- AI opponents complete races.
+
+Required multiplayer tests:
+
+- Two clients connect.
+- Both see each other's movement.
+- Both can participate in one race.
+- Power-up events synchronize.
+- Damage synchronizes.
+- Race results remain consistent.
+- Disconnected players are handled correctly.
+- Reconnection works where supported.
+
+Required interface tests:
+
+- Buttons function.
+- Menus navigate correctly.
+- Garage updates.
+- Mobile controls respond.
+- Settings persist.
+- Errors are handled.
+
+Required performance tests:
+
+- Actual FPS.
+- Frame time.
+- Memory usage where measurable.
+- Draw calls.
+- Loading performance.
+- Server simulation stability.
+
+Do not fabricate successful test results.
+
+Clearly label untested features.
+
+## 38. ERROR HANDLING
+
+The game must handle:
+
+- WebGL initialization failure.
+- Unsupported graphics features.
+- Missing assets.
+- Failed asset downloads.
+- Slow internet.
+- Server disconnection.
+- Invalid room codes.
+- Matchmaking failure.
+- Authentication failure.
+- Database errors.
+- Browser focus loss.
+- Mobile orientation changes.
+
+Display useful recovery actions.
+
+Provide a low-graphics fallback where possible.
+
+If 3D rendering cannot initialize, show an honest compatibility error.
+
+Do not replace the actual 3D game with a fake animation.
+
+## 39. DEVELOPMENT RULES
+
+Follow these instructions throughout development:
+
+1. Build working features, not decorative placeholders.
+2. Keep the application executable after every major change.
+3. Preserve working systems while adding new features.
+4. Use modular architecture.
+5. Use TypeScript types.
+6. Avoid unnecessary dependencies.
+7. Prevent memory leaks.
+8. Dispose unused 3D assets.
+9. Remove inactive event listeners.
+10. Keep game logic independent of UI rendering.
+11. Validate network messages.
+12. Use legally available assets.
+13. Implement responsive controls.
+14. Handle errors.
+15. Test before claiming completion.
+
+Do not repeatedly ask which feature to develop next.
+
+Follow the implementation roadmap.
+
+Make ordinary engineering decisions independently.
+
+Ask for clarification only when a genuine blocker or important authorization decision exists.
+
+## 40. DEFINITION OF DONE
+
+The complete MVP must satisfy:
+
+- Runs inside a web browser.
+- Contains real 3D graphics.
+- Contains at least three distinct detailed vehicles.
+- Contains at least one complete 3D racing track.
+- Has responsive arcade vehicle physics.
+- Supports drifting.
+- Supports nitro.
+- Supports all eight power-up types.
+- Supports a three-slot inventory.
+- Supports vehicle damage.
+- Supports defensive shields.
+- Supports repairs.
+- Supports AI opponents.
+- Supports complete races.
+- Supports race results.
+- Supports desktop controls.
+- Supports mobile controls.
+- Supports an interactive 3D garage.
+- Supports actual online multiplayer.
+- Has persistent player progression.
+- Has working menus.
+- Has professional original visual design.
+- Has configurable graphics settings.
+- Has actual gameplay test results.
+
+The full project additionally targets 40 vehicles, eight tracks, ten game modes, and up to 20 real online players.
+
+Do not claim that these expansion targets are completed until they are actually implemented and tested.
+
+## 41. FINAL INSTRUCTIONS
+
+Start building the application now.
+
+Do not respond with only an explanation or a project plan.
+
+Create the actual project files and implement the game directly inside Google AI Studio.
+
+Use the original Blur game as the primary gameplay reference, while creating an independent original product.
+
+Prioritize real 3D racing gameplay over decorative screens.
+
+The first goal is a working browser-based racing prototype with a detailed car, a complete 3D track, responsive driving physics, a dynamic third-person camera, and a functional race.
+
+Then implement the complete combat system, realistic nighttime environments, AI opponents, garage, progression, and actual multiplayer.
+
+Continue through the development roadmap as far as the available environment and execution limits permit.
+
+When execution limits are reached, preserve a working build and document the exact next implementation step.
+
+Do not claim the complete game is finished unless all required acceptance criteria have been verified.
+
+BUILD THE GAME NOW.
+
+START WITH PHASE 1 AND PRODUCE A PLAYABLE 3D WEB RACING GAME.

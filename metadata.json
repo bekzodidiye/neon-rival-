@@ -1,0 +1,6 @@
+{
+  "name": "Neon Rivals",
+  "description": "High-speed 3D arcade combat racing game inspired by Blur with power-up combat, interactive 3D garage, AI rivals, and real-time online multiplayer.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
