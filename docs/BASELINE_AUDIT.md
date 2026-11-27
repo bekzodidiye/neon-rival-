@@ -1,29 +1,35 @@
-# NEON RIVALS — Stage 0 Baseline Audit (V5.0)
+# NEON RIVALS — Baseline & V6.0 Audit Report
 
 ## 1. Repository & Tooling Snapshot
 - **Stack**: React 19, TypeScript 7, Three.js 0.187, Vite 8.3, Express 4.21, `ws` 8.23, `vite-plugin-pwa` 2.0, `tsx` 4.21.
-- **Pre-Rebuild Verification Baseline**:
-  - `tsc --noEmit`: Passing (0 errors).
-  - `vite build`: Passing.
-  - `tsx --test src/game/gameLogic.test.ts`: 9/9 tests passing (track spline, physics acceleration/nitro/drift, power-up inventory, checkpoint progression, camera motion blur, V3.0 combat resolver, 4-block repair cap, 2-stage air-brake, handling archetypes & 10x combo).
-  - `package.json`: Added `"test"` and `"typecheck"` scripts in Stage 0.
+- **Verification Scripts (`package.json`)**:
+  - `npm run typecheck` (`tsc --noEmit`)
+  - `npm run build` (`vite build`)
+  - `npm test` (`tsx --test src/game/gameLogic.test.ts shared/simulation/authoritativeRace.test.ts server/game/multiplayer.test.ts`)
 
-## 2. Verified Defects Identified Before V5.0 Rebuild
-1. **Vehicle 3D Assets (`src/engine/vehicleMesh.ts`)**:
-   - Built from blocky `ExtrudeGeometry` side profiles + stacked `BoxGeometry` fenders, roof caps, mirrors, and simple cylinder wheels lacking sculpted wheel arches, curved roofs, recessed greenhouses, brake discs/calipers, and distinct silhouette topology.
-   - `phantom_x` defaulted to near-black `#181E2C` matte paint, reducing silhouette readability at night.
-2. **Vehicle Physics (`src/game/physics.ts`)**:
-   - Directly snapped `racer.y = proj.sample.y` every frame with zero suspension compression, vertical velocity, or ground contact simulation.
-   - Used a uniform circular collision radius (`2.15m`) for every car regardless of vehicle length/width.
-   - Included passive drift-charged Nitro (`Shift` key) and automatic post-drift boost in the default Blur Powered Racing ruleset, conflicting with 3-slot tactical Nitro inventory rules.
-   - Instantaneous Class D acceleration (`acceleration: 39 m/s^2`, `topSpeed: 76 m/s`) felt artificially twitchy rather than progressive and weighted.
-3. **Track Math & Environment (`src/game/trackMath.ts`, `src/engine/trackMesh.ts`, `src/engine/proceduralTextures.ts`)**:
-   - Track spline was completely flat (`y = 0` everywhere) and used raw parameter `t` rather than an arc-length distance lookup table.
-   - Checkpoint validation checked index proximity (`currentCp === nextCp || nextPlusOne`) instead of swept gate crossing with crossing direction validation.
-   - City buildings used a single uniform `BoxGeometry` instanced mesh with bright multi-color square window patterns rather than multi-archetype urban architecture, curbs/sidewalks, bridge piers, and realistic nighttime street illumination.
-4. **Chase Camera (`src/engine/RaceEngine.ts`)**:
-   - Embedded inside the 2,251-line `RaceEngine.ts` with `backDist = 8.4m`, `camHeight = 3.55m` (slightly high/distant) and no wall-clipping avoidance.
-5. **Multiplayer & Security (`server.ts`, `src/net/multiplayerClient.ts`)**:
-   - Password hashing used single-pass `SHA-256` with a static prefix (`nr_salt_`) instead of `scrypt` with per-user random salt.
-   - Auth endpoints issued no signed/verified session tokens; `/api/race/complete` accepted unauthenticated client-supplied `username`, `fanPoints`, and `wins`.
-   - WebSocket client hardcoded `${proto}//${window.location.host}/ws` without `VITE_GAME_SERVER_WS_URL` support, and server rebroadcast client-authored `racer_state` directly.
+## 2. V5.0 Baseline Defects (Resolved in V5.0 & Preserved)
+1. **Blocky Vehicle Meshes** → Replaced with 34-station parametric lofted sculpted automotive geometry, wheel arches, brake discs/calipers, and clearcoat PBR paint.
+2. **Flat Track & Uniform Collisions** → Replaced with overpass elevation, arc-length lookup tables (`sampleTrackByDistance`), swept geometric checkpoints, 4-wheel spring-damper suspension, and vehicle-specific OBB SAT collisions.
+3. **Passive Drift-Charged Nitro** → Removed in favor of strict Blur Powered Racing 3-slot tactical Nitro inventory rules.
+4. **Embedded Chase Camera** → Extracted to `src/engine/camera/ChaseCamera.ts`.
+5. **Weak Legacy Auth** → Upgraded from static-salt SHA-256 to salted `scrypt` + HMAC-SHA256 Bearer sessions + rate limiting.
+
+## 3. V5.0 Remaining Gaps Audited at Start of V6.0 & Current Resolution
+1. **CRITICAL Security Blocker — Client-Claimed Race Rewards (`POST /api/race/complete`)**:
+   - *V5.0 flaw*: Accepted client-submitted position, takedowns, and hits to award online credits/XP/leaderboard rank.
+   - *V6.0 resolution*: **FIXED (Gate E PASS)**. `POST /api/race/complete` disabled (`403 CLIENT_RACE_CLAIM_DISABLED`). Rewards and leaderboard progression are granted exclusively by the server-authoritative match engine with idempotent `(matchId, userId)` ledger checks; fabricated seeded leaderboard entries removed.
+2. **Rear-View Camera Bug & Wall Clipping**:
+   - *V5.0 flaw*: Double-negative offset placed rear-view camera behind the car looking forward instead of ahead of the car looking backward; lacked raycast geometry obstruction handling.
+   - *V6.0 resolution*: **FIXED (Gate C PASS)**. Rear-view sits `+5.8m` ahead looking `-18m` back toward pursuers with instant toggle snap and `THREE.Raycaster` wall pull-in.
+3. **Single Lighting Mood & Missing Street-Level Urban Detail**:
+   - *V5.0 flaw*: All tracks shared a single night lighting rig; Neon City lacked street-level foliage/signals.
+   - *V6.0 resolution*: **FIXED (Gate B PASS)**. Added `src/engine/lighting.ts` (`night` / `day` / `sunset` + matching PMREM) and instanced roadside planters/trees + traffic signals on Neon City.
+4. **No GLB Asset Pipeline**:
+   - *V5.0 flaw*: No `GLTFLoader`, cache, validation, LOD, or disposal path for artist-authored models.
+   - *V6.0 resolution*: **PIPELINE COMPLETE / ASSETS BLOCKED (Gate A BLOCKED)**. Implemented `VehicleAssetLoader.ts` with honest procedural fallback (`available: false`, zero 404s) plus vehicle detail upgrades (panel seams, grilles, exhausts, projectors). External licensed `.glb` assets still required.
+5. **Non-Authoritative WebSocket Relay**:
+   - *V5.0 flaw*: Clients simulated physics locally and relayed `racer_state` / `combat_use`.
+   - *V6.0 resolution*: **FIXED (Gate D PASS ≤8 clients)**. Implemented browser-independent 60 Hz `shared/simulation/RaceSimulation.ts`, server `InputQueue`/`AuthoritativeRace`/`RoomManager`, 20 Hz `world_snapshot` fanout, client prediction/reconciliation, and 2/4/8-client automated WS tests.
+6. **Production Database & Cloud Infrastructure**:
+   - *V5.0 flaw*: Single-file JSON store only; no container build or SQL schema.
+   - *V6.0 resolution*: **ARTIFACTS READY / INFRA BLOCKED (Gate F BLOCKED)**. Added `server/persistence/schema.sql`, `PersistenceAdapter.ts`, `Dockerfile`, and `docs/DEPLOYMENT.md`; live cloud provisioning deferred per cost policy.

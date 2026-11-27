@@ -5,11 +5,18 @@ import {
   ACHIEVEMENTS,
   CAREER_EVENTS,
   DAILY_MISSIONS,
-  SEED_LEADERBOARD,
   xpForNextLevel,
   type CareerEvent,
 } from '../game/progression';
 import { t } from '../game/i18n';
+
+interface VerifiedLeaderboardRow {
+  username: string;
+  fanPoints: number;
+  wins: number;
+  vehicle: string;
+  verified?: boolean;
+}
 
 interface CareerModalProps {
   profile: PlayerProfile;
@@ -29,7 +36,8 @@ export const CareerModal: React.FC<CareerModalProps> = ({
   onBack,
 }) => {
   const [tab, setTab] = useState<'career' | 'missions' | 'leaderboard' | 'profile'>('career');
-  const [leaderboard, setLeaderboard] = useState(SEED_LEADERBOARD);
+  const [leaderboard, setLeaderboard] = useState<VerifiedLeaderboardRow[]>([]);
+  const [leaderboardLoaded, setLeaderboardLoaded] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'register'>('register');
   const [username, setUsername] = useState(profile.isGuest ? '' : profile.username);
   const [password, setPassword] = useState('');
@@ -41,9 +49,12 @@ export const CareerModal: React.FC<CareerModalProps> = ({
     fetch(`${apiBase}/api/leaderboard`)
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
-        if (data?.leaderboard?.length) setLeaderboard(data.leaderboard);
+        if (Array.isArray(data?.leaderboard)) {
+          setLeaderboard(data.leaderboard);
+        }
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setLeaderboardLoaded(true));
   }, []);
 
   const handleAuthSubmit = async (e: React.FormEvent) => {
@@ -236,33 +247,45 @@ export const CareerModal: React.FC<CareerModalProps> = ({
 
         {tab === 'leaderboard' && (
           <div className="mt-4 bg-[#090D18] border border-white/12 overflow-hidden">
-            <table className="w-full text-left text-xs font-mono-num">
-              <thead className="bg-[#101522] text-[#94A3B8]">
-                <tr>
-                  <th className="px-4 py-2.5">#</th>
-                  <th className="px-4 py-2.5">DRIVER</th>
-                  <th className="px-4 py-2.5">VEHICLE</th>
-                  <th className="px-4 py-2.5 text-right">WINS</th>
-                  <th className="px-4 py-2.5 text-right">FAN POINTS</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/10">
-                {leaderboard.map((row, idx) => (
-                  <tr
-                    key={`${row.username}_${idx}`}
-                    className={row.username === profile.username ? 'bg-[#00C8FF]/15 text-white' : 'text-[#CBD5E1]'}
-                  >
-                    <td className="px-4 py-2.5 font-bold text-[#00C8FF]">{idx + 1}</td>
-                    <td className="px-4 py-2.5 font-bold">{row.username}</td>
-                    <td className="px-4 py-2.5 text-[#94A3B8]">{row.vehicle}</td>
-                    <td className="px-4 py-2.5 text-right">{row.wins}</td>
-                    <td className="px-4 py-2.5 text-right font-bold text-[#25F4A0]">
-                      {row.fanPoints.toLocaleString()}
-                    </td>
+            {leaderboard.length === 0 ? (
+              <div className="p-8 text-center">
+                <Trophy className="w-7 h-7 text-[#00C8FF] mx-auto mb-2 opacity-80" />
+                <div className="font-display font-bold text-sm tracking-wider text-[#F5F7FA]">
+                  {leaderboardLoaded ? 'NO VERIFIED ONLINE MATCHES RECORDED YET' : 'LOADING VERIFIED RANKINGS...'}
+                </div>
+                <p className="mt-1.5 text-xs text-[#94A3B8] max-w-md mx-auto">
+                  Only server-verified authoritative multiplayer matches count toward competitive rankings. Offline single-player races remain local to your device.
+                </p>
+              </div>
+            ) : (
+              <table className="w-full text-left text-xs font-mono-num">
+                <thead className="bg-[#101522] text-[#94A3B8]">
+                  <tr>
+                    <th className="px-4 py-2.5">#</th>
+                    <th className="px-4 py-2.5">DRIVER</th>
+                    <th className="px-4 py-2.5">VEHICLE</th>
+                    <th className="px-4 py-2.5 text-right">WINS</th>
+                    <th className="px-4 py-2.5 text-right">FAN POINTS</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-white/10">
+                  {leaderboard.map((row, idx) => (
+                    <tr
+                      key={`${row.username}_${idx}`}
+                      className={row.username === profile.username ? 'bg-[#00C8FF]/15 text-white' : 'text-[#CBD5E1]'}
+                    >
+                      <td className="px-4 py-2.5 font-bold text-[#00C8FF]">{idx + 1}</td>
+                      <td className="px-4 py-2.5 font-bold">{row.username}</td>
+                      <td className="px-4 py-2.5 text-[#94A3B8]">{row.vehicle}</td>
+                      <td className="px-4 py-2.5 text-right">{row.wins}</td>
+                      <td className="px-4 py-2.5 text-right font-bold text-[#25F4A0]">
+                        {row.fanPoints.toLocaleString()}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         )}
 
@@ -338,7 +361,7 @@ export const CareerModal: React.FC<CareerModalProps> = ({
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Password (4+ chars)"
+                  placeholder="Password (6+ chars)"
                   aria-label="Password"
                   className="w-full bg-[#101522] border border-white/20 px-3 py-2 text-sm text-[#F5F7FA]"
                 />

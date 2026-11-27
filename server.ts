@@ -1,100 +1,83 @@
 import express from 'express';
 import http from 'http';
-import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import { promisify } from 'util';
+import { fileURLToPath } from 'url';
 import { WebSocketServer, WebSocket } from 'ws';
 import { createServer as createViteServer } from 'vite';
+import {
+  JsonDevPersistenceAdapter,
+  type PersistenceAdapter,
+  type StoredUser,
+} from './server/persistence/PersistenceAdapter';
+import { RoomManager } from './server/game/RoomManager';
+import {
+  validateCreateRoomPayload,
+  validateJoinRoomPayload,
+  validatePlayerInput,
+} from './shared/protocol/validation';
 
-const PORT = Number(process.env.PORT || 3000);
+const scryptAsync = promisify(crypto.scrypt) as (
+  password: string | Buffer,
+  salt: string | Buffer,
+  keylen: number,
+  options: crypto.ScryptOptions,
+) => Promise<Buffer>;
+
+const DEFAULT_PORT = Number(process.env.PORT || 3000);
 const isProd = process.env.NODE_ENV === 'production';
 
 // Cryptographic signing key for Bearer session tokens (env override or fresh per-process CSPRNG key)
 const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+const MIN_PASSWORD_LEN = 6;
+const MAX_PASSWORD_LEN = 128;
 
-// Persistent JSON data store for accounts, profiles, and global leaderboard
-const DATA_DIR = path.resolve(process.cwd(), 'data');
-const STORE_PATH = path.join(DATA_DIR, 'store.json');
-
-interface StoredUser {
-  id: string;
-  username: string;
-  passwordHash: string;
-  level: number;
-  xp: number;
-  credits: number;
-  fanPoints: number;
-  racesCompleted: number;
-  wins: number;
-  takedowns: number;
-  ownedVehicles: string[];
-  selectedVehicleId: string;
+export interface AppServerOptions {
+  port?: number;
+  host?: string;
+  enableVite?: boolean;
+  persistence?: PersistenceAdapter;
+  persistToDisk?: boolean;
+  storePath?: string;
+  simHz?: number;
+  snapshotHz?: number;
+  countdownSeconds?: number;
+  maxPlayersPerRoom?: number;
+  allowedOrigins?: string[];
 }
 
-interface DataStore {
-  users: Record<string, StoredUser>;
-  leaderboard: { username: string; fanPoints: number; wins: number; vehicle: string; updatedAt: string }[];
+export interface RunningAppServer {
+  app: express.Express;
+  server: http.Server;
+  wss: WebSocketServer;
+  persistence: PersistenceAdapter;
+  roomManager: RoomManager;
+  port: number;
+  url: string;
+  wsUrl: string;
+  close: () => Promise<void>;
 }
-
-interface SessionRecord {
-  userId: string;
-  userKey: string;
-  username: string;
-  expiresAt: number;
-}
-
-function loadStore(): DataStore {
-  try {
-    if (fs.existsSync(STORE_PATH)) {
-      return JSON.parse(fs.readFileSync(STORE_PATH, 'utf-8')) as DataStore;
-    }
-  } catch {
-    // fallback to seed store
-  }
-  return {
-    users: {},
-    leaderboard: [
-      { username: 'NOVA_APEX', fanPoints: 14850, wins: 29, vehicle: 'PHANTOM X', updatedAt: new Date().toISOString() },
-      { username: 'KAZUYA_GT', fanPoints: 12120, wins: 24, vehicle: 'CYBER GT-R', updatedAt: new Date().toISOString() },
-      { username: 'VALKYRIE_X', fanPoints: 9840, wins: 19, vehicle: 'NIGHT VIPER', updatedAt: new Date().toISOString() },
-      { username: 'TASHKENT_DRIFT', fanPoints: 8420, wins: 15, vehicle: 'CYBER GT-R', updatedAt: new Date().toISOString() },
-      { username: 'RAZOR_VOLT', fanPoints: 6790, wins: 11, vehicle: 'STREET FALCON', updatedAt: new Date().toISOString() },
-    ],
-  };
-}
-
-function saveStore(store: DataStore): void {
-  try {
-    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(STORE_PATH, JSON.stringify(store, null, 2));
-  } catch {
-    // ignore read-only disk environments
-  }
-}
-
-const store = loadStore();
-
-// Active signed sessions & replay-protection ledger
-const activeSessions = new Map<string, SessionRecord>();
-const claimedRaceTransactions = new Set<string>();
-const authRateLimiter = new Map<string, { count: number; resetAt: number }>();
 
 /**
- * Per-user random-salt scrypt password hashing (replaces legacy static-salt SHA-256).
+ * Asynchronous per-user random-salt scrypt password hashing (never blocks Node event loop).
  */
-function hashPasswordScrypt(password: string): string {
+export async function hashPasswordScryptAsync(password: string): Promise<string> {
   const salt = crypto.randomBytes(16).toString('hex');
-  const derived = crypto.scryptSync(password, salt, 64, { N: 16384, r: 8, p: 1 }).toString('hex');
-  return `scrypt$${salt}$${derived}`;
+  const derived = await scryptAsync(password, salt, 64, { N: 16384, r: 8, p: 1 });
+  return `scrypt$${salt}$${derived.toString('hex')}`;
 }
 
-function verifyPassword(password: string, storedHash: string): { valid: boolean; needsMigration: boolean } {
+export async function verifyPasswordAsync(
+  password: string,
+  storedHash: string,
+): Promise<{ valid: boolean; needsMigration: boolean }> {
   if (storedHash.startsWith('scrypt$')) {
     const parts = storedHash.split('$');
     if (parts.length !== 3) return { valid: false, needsMigration: false };
     const [, salt, expectedHex] = parts;
-    const derived = crypto.scryptSync(password, salt, 64, { N: 16384, r: 8, p: 1 });
+    const derived = await scryptAsync(password, salt, 64, { N: 16384, r: 8, p: 1 });
     const expected = Buffer.from(expectedHex, 'hex');
     if (derived.length !== expected.length) return { valid: false, needsMigration: false };
     return { valid: crypto.timingSafeEqual(derived, expected), needsMigration: false };
@@ -110,199 +93,185 @@ function verifyPassword(password: string, storedHash: string): { valid: boolean;
   return { valid: false, needsMigration: false };
 }
 
-function issueSessionToken(user: StoredUser, userKey: string): string {
-  const jti = crypto.randomBytes(18).toString('hex');
-  const expiresAt = Date.now() + SESSION_TTL_MS;
-  const payload = Buffer.from(
-    JSON.stringify({ jti, uid: user.id, uk: userKey, exp: expiresAt }),
-    'utf-8',
-  ).toString('base64url');
-  const sig = crypto.createHmac('sha256', SESSION_SECRET).update(payload).digest('base64url');
-  const token = `${payload}.${sig}`;
-  activeSessions.set(jti, { userId: user.id, userKey, username: user.username, expiresAt });
-  return token;
-}
-
-function verifyBearerSession(authHeader: string | undefined): { jti: string; session: SessionRecord } | null {
-  if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
-  const token = authHeader.slice(7).trim();
-  const dotIdx = token.indexOf('.');
-  if (dotIdx <= 0) return null;
-  const payload = token.slice(0, dotIdx);
-  const sig = token.slice(dotIdx + 1);
-  const expectedSig = crypto.createHmac('sha256', SESSION_SECRET).update(payload).digest('base64url');
-  const sigBuf = Buffer.from(sig);
-  const expBuf = Buffer.from(expectedSig);
-  if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) return null;
-
+function isOriginAllowed(origin: string | undefined, host: string | undefined, allowList: string[]): boolean {
+  // Non-browser clients (e.g., native WS tests or curl) may omit Origin
+  if (!origin) return true;
+  if (allowList.includes('*')) return true;
+  if (allowList.includes(origin)) return true;
   try {
-    const parsed = JSON.parse(Buffer.from(payload, 'base64url').toString('utf-8')) as {
-      jti?: string;
-      exp?: number;
-    };
-    if (!parsed.jti || !parsed.exp || parsed.exp < Date.now()) {
-      if (parsed.jti) activeSessions.delete(parsed.jti);
-      return null;
-    }
-    const rec = activeSessions.get(parsed.jti);
-    if (!rec || rec.expiresAt < Date.now()) {
-      activeSessions.delete(parsed.jti);
-      return null;
-    }
-    return { jti: parsed.jti, session: rec };
+    const parsed = new URL(origin);
+    if (host && parsed.host === host) return true;
+    if (!isProd && (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1')) return true;
   } catch {
-    return null;
+    return false;
   }
+  return false;
 }
 
-function checkAuthRateLimit(ip: string): boolean {
-  const now = Date.now();
-  const entry = authRateLimiter.get(ip);
-  if (!entry || now > entry.resetAt) {
-    authRateLimiter.set(ip, { count: 1, resetAt: now + 60_000 });
-    return true;
+export async function createAppServer(options: AppServerOptions = {}): Promise<RunningAppServer> {
+  const port = options.port ?? DEFAULT_PORT;
+  const host = options.host ?? '0.0.0.0';
+  const enableVite = options.enableVite ?? true;
+  const persistence =
+    options.persistence ??
+    new JsonDevPersistenceAdapter({
+      storePath: options.storePath,
+      persistToDisk: options.persistToDisk ?? true,
+    });
+
+  const allowedOrigins =
+    options.allowedOrigins ??
+    (process.env.ALLOWED_ORIGINS
+      ? process.env.ALLOWED_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean)
+      : []);
+
+  const roomManager = new RoomManager({
+    persistence,
+    maxPlayersPerRoom: options.maxPlayersPerRoom ?? 20,
+    simHz: options.simHz ?? 60,
+    snapshotHz: options.snapshotHz ?? 20,
+    countdownSeconds: options.countdownSeconds ?? 2.2,
+  });
+
+  const authRateLimiter = new Map<string, { count: number; resetAt: number }>();
+
+  function checkAuthRateLimit(ip: string): boolean {
+    const now = Date.now();
+    const entry = authRateLimiter.get(ip);
+    if (!entry || now > entry.resetAt) {
+      authRateLimiter.set(ip, { count: 1, resetAt: now + 60_000 });
+      return true;
+    }
+    entry.count += 1;
+    return entry.count <= 25;
   }
-  entry.count += 1;
-  return entry.count <= 15;
-}
 
-function computeAuthoritativeRaceRewards(input: {
-  position: number;
-  totalRacers: number;
-  hitsLanded: number;
-  takedowns: number;
-  blocksLanded: number;
-  difficulty: string;
-}): { credits: number; xp: number; fanPoints: number } {
-  const pos = Math.max(1, Math.min(8, Math.round(input.position)));
-  const hits = Math.max(0, Math.min(35, Math.round(input.hitsLanded)));
-  const takedowns = Math.max(0, Math.min(12, Math.round(input.takedowns)));
-  const blocks = Math.max(0, Math.min(25, Math.round(input.blocksLanded)));
-  const diffMult = input.difficulty === 'pro' ? 1.5 : input.difficulty === 'easy' ? 0.85 : 1.0;
-
-  const positionTable = [1800, 1300, 950, 700, 520, 400, 320, 260];
-  const baseCredits = positionTable[Math.min(pos - 1, positionTable.length - 1)] ?? 260;
-  const credits = Math.round((baseCredits + hits * 45 + takedowns * 220 + blocks * 60) * diffMult);
-  const xp = Math.round((260 + (9 - pos) * 55 + hits * 20 + takedowns * 90) * diffMult);
-  const fanPoints = Math.round((180 + (9 - pos) * 65 + hits * 35 + takedowns * 140 + blocks * 50) * diffMult);
-  return { credits, xp, fanPoints };
-}
-
-// Authoritative Multiplayer Room State
-interface ValidatedInputState {
-  sequence: number;
-  throttle: number;
-  brake: number;
-  steering: number;
-  drift: boolean;
-  firePowerUp: boolean;
-  rearFire: boolean;
-  receivedAt: number;
-}
-
-interface RoomPlayer {
-  id: string;
-  name: string;
-  vehicleId: string;
-  customization: Record<string, unknown>;
-  ready: boolean;
-  isHost: boolean;
-  ws: WebSocket;
-  lastStateAt: number;
-  lastX: number;
-  lastZ: number;
-  lastInputSeq: number;
-  lastInput: ValidatedInputState | null;
-}
-
-interface GameRoom {
-  code: string;
-  hostId: string;
-  trackId: string;
-  mode: string;
-  laps: number;
-  status: 'lobby' | 'countdown' | 'racing' | 'finished';
-  players: Map<string, RoomPlayer>;
-}
-
-const ALLOWED_TRACKS = new Set(['neon_city', 'coastal_highway', 'desert_canyon']);
-const ALLOWED_MODES = new Set(['combat_race', 'elimination', 'time_trial', 'destruction']);
-const ALLOWED_POWERUPS = new Set(['NITRO', 'SHUNT', 'BOLT', 'MINE', 'SHOCK', 'BARGE', 'SHIELD', 'REPAIR']);
-
-const rooms = new Map<string, GameRoom>();
-
-function generateRoomCode(): string {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  let out = '';
-  for (let i = 0; i < 6; i++) {
-    out += chars[crypto.randomInt(0, chars.length)];
+  function issueSessionToken(user: StoredUser, userKey: string): string {
+    const jti = crypto.randomBytes(18).toString('hex');
+    const expiresAt = Date.now() + SESSION_TTL_MS;
+    const payload = Buffer.from(
+      JSON.stringify({ jti, uid: user.id, uk: userKey, exp: expiresAt }),
+      'utf-8',
+    ).toString('base64url');
+    const sig = crypto.createHmac('sha256', SESSION_SECRET).update(payload).digest('base64url');
+    const token = `${payload}.${sig}`;
+    persistence.saveSession({
+      jti,
+      userId: user.id,
+      userKey,
+      username: user.username,
+      expiresAt,
+    });
+    return token;
   }
-  return rooms.has(out) ? generateRoomCode() : out;
-}
 
-function serializeRoom(room: GameRoom) {
-  return {
-    code: room.code,
-    hostId: room.hostId,
-    trackId: room.trackId,
-    mode: room.mode,
-    laps: room.laps,
-    status: room.status,
-    players: Array.from(room.players.values()).map((p) => ({
-      id: p.id,
-      name: p.name,
-      vehicleId: p.vehicleId,
-      customization: p.customization,
-      ready: p.ready,
-      isHost: p.isHost,
-    })),
-  };
-}
+  function verifyRawToken(token: string | undefined) {
+    if (!token) return null;
+    const trimmed = token.trim();
+    const dotIdx = trimmed.indexOf('.');
+    if (dotIdx <= 0) return null;
+    const payload = trimmed.slice(0, dotIdx);
+    const sig = trimmed.slice(dotIdx + 1);
+    const expectedSig = crypto.createHmac('sha256', SESSION_SECRET).update(payload).digest('base64url');
+    const sigBuf = Buffer.from(sig);
+    const expBuf = Buffer.from(expectedSig);
+    if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) return null;
 
-function broadcastRoom(room: GameRoom, payload: unknown, excludeId?: string) {
-  const raw = JSON.stringify(payload);
-  for (const p of room.players.values()) {
-    if (excludeId && p.id === excludeId) continue;
-    if (p.ws.readyState === WebSocket.OPEN) {
-      p.ws.send(raw);
+    try {
+      const parsed = JSON.parse(Buffer.from(payload, 'base64url').toString('utf-8')) as {
+        jti?: string;
+        exp?: number;
+      };
+      if (!parsed.jti || !parsed.exp || parsed.exp < Date.now()) {
+        if (parsed.jti) persistence.revokeSession(parsed.jti);
+        return null;
+      }
+      const rec = persistence.getSession(parsed.jti);
+      if (!rec || rec.expiresAt < Date.now()) {
+        persistence.revokeSession(parsed.jti);
+        return null;
+      }
+      return { jti: parsed.jti, session: rec };
+    } catch {
+      return null;
     }
   }
-}
 
-async function startServer() {
+  function verifyBearerHeader(authHeader: string | undefined) {
+    if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
+    return verifyRawToken(authHeader.slice(7));
+  }
+
   const app = express();
   app.use(express.json({ limit: '128kb' }));
 
+  // Basic security headers & explicit CORS/Origin enforcement
+  app.use((req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    const origin = req.headers.origin;
+    if (origin && isOriginAllowed(origin, req.headers.host, allowedOrigins)) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Vary', 'Origin');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    }
+    if (req.method === 'OPTIONS') {
+      res.status(204).end();
+      return;
+    }
+    next();
+  });
+
   // REST API Endpoints
   app.get('/api/health', (_req, res) => {
+    const stats = roomManager.getStats();
     res.json({
       ok: true,
-      roomsActive: rooms.size,
-      playersOnline: Array.from(rooms.values()).reduce((a, r) => a + r.players.size, 0),
+      authoritativeMultiplayer: true,
+      persistenceKind: persistence.kind,
+      roomsActive: stats.roomsActive,
+      playersOnline: stats.playersOnline,
+      racesRunning: stats.racesRunning,
     });
   });
 
+  // Strictly verified leaderboard (zero fabricated competitive accounts — V6.0 Section 22)
   app.get('/api/leaderboard', (_req, res) => {
-    const sorted = [...store.leaderboard].sort((a, b) => b.fanPoints - a.fanPoints).slice(0, 20);
-    res.json({ leaderboard: sorted });
+    const leaderboard = persistence.getVerifiedLeaderboard(20);
+    res.json({
+      verifiedOnly: true,
+      leaderboard,
+    });
+  });
+
+  app.get('/api/matches/:matchId/result', (req, res) => {
+    const matchId = String(req.params.matchId || '').trim().slice(0, 64);
+    const result = persistence.getMatchResult(matchId);
+    if (!result) {
+      res.status(404).json({ error: 'Verified match result not found.' });
+      return;
+    }
+    res.json({ result });
   });
 
   app.get('/api/auth/me', (req, res) => {
-    const auth = verifyBearerSession(req.headers.authorization);
+    const auth = verifyBearerHeader(req.headers.authorization);
     if (!auth) {
       res.status(401).json({ error: 'Not authenticated.' });
       return;
     }
-    const user = store.users[auth.session.userKey];
+    const user = persistence.getUserByKey(auth.session.userKey);
     if (!user) {
       res.status(401).json({ error: 'Session account no longer exists.' });
       return;
     }
     const { passwordHash: _omit, ...safeUser } = user;
-    res.json({ user: safeUser });
+    const rewardLedger = persistence.getRewardLedgerForUser(user.id);
+    res.json({ user: safeUser, verifiedMatchesCount: rewardLedger.length });
   });
 
-  app.post('/api/auth/register', (req, res) => {
+  app.post('/api/auth/register', async (req, res) => {
     const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
     if (!checkAuthRateLimit(clientIp)) {
       res.status(429).json({ error: 'Too many authentication attempts. Please wait a minute.' });
@@ -314,37 +283,38 @@ async function startServer() {
       res.status(400).json({ error: 'Username must be 3-20 alphanumeric, underscore, or dash characters.' });
       return;
     }
-    if (password.length < 6) {
-      res.status(400).json({ error: 'Password must be at least 6 characters.' });
+    if (password.length < MIN_PASSWORD_LEN || password.length > MAX_PASSWORD_LEN) {
+      res.status(400).json({ error: `Password must be between ${MIN_PASSWORD_LEN} and ${MAX_PASSWORD_LEN} characters.` });
       return;
     }
     const key = username.toLowerCase();
-    if (store.users[key]) {
+    if (persistence.getUserByKey(key)) {
       res.status(409).json({ error: 'Username already registered.' });
       return;
     }
+    const passwordHash = await hashPasswordScryptAsync(password);
     const user: StoredUser = {
       id: `usr_${crypto.randomBytes(6).toString('hex')}`,
       username,
-      passwordHash: hashPasswordScrypt(password),
+      passwordHash,
       level: 1,
       xp: 0,
       credits: 3000,
-      fanPoints: 350,
+      fanPoints: 0,
       racesCompleted: 0,
       wins: 0,
       takedowns: 0,
       ownedVehicles: ['street_falcon'],
       selectedVehicleId: 'street_falcon',
+      createdAt: new Date().toISOString(),
     };
-    store.users[key] = user;
-    saveStore(store);
+    persistence.createUser(key, user);
     const token = issueSessionToken(user, key);
     const { passwordHash: _omit, ...safeUser } = user;
     res.json({ user: safeUser, token });
   });
 
-  app.post('/api/auth/login', (req, res) => {
+  app.post('/api/auth/login', async (req, res) => {
     const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
     if (!checkAuthRateLimit(clientIp)) {
       res.status(429).json({ error: 'Too many authentication attempts. Please wait a minute.' });
@@ -352,21 +322,24 @@ async function startServer() {
     }
     const username = String(req.body?.username || '').trim();
     const password = String(req.body?.password || '');
+    if (password.length < 1 || password.length > MAX_PASSWORD_LEN) {
+      res.status(401).json({ error: 'Invalid username or password.' });
+      return;
+    }
     const key = username.toLowerCase();
-    const user = store.users[key];
+    const user = persistence.getUserByKey(key);
     if (!user) {
       res.status(401).json({ error: 'Invalid username or password.' });
       return;
     }
-    const check = verifyPassword(password, user.passwordHash);
+    const check = await verifyPasswordAsync(password, user.passwordHash);
     if (!check.valid) {
       res.status(401).json({ error: 'Invalid username or password.' });
       return;
     }
-    // Seamlessly upgrade legacy SHA-256 accounts to salted scrypt
     if (check.needsMigration) {
-      user.passwordHash = hashPasswordScrypt(password);
-      saveStore(store);
+      user.passwordHash = await hashPasswordScryptAsync(password);
+      persistence.updateUser(key, user);
     }
     const token = issueSessionToken(user, key);
     const { passwordHash: _omit, ...safeUser } = user;
@@ -374,394 +347,296 @@ async function startServer() {
   });
 
   app.post('/api/auth/logout', (req, res) => {
-    const auth = verifyBearerSession(req.headers.authorization);
+    const auth = verifyBearerHeader(req.headers.authorization);
     if (auth) {
-      activeSessions.delete(auth.jti);
+      persistence.revokeSession(auth.jti);
     }
     res.json({ ok: true });
   });
 
-  // Authenticated, replay-protected, server-computed race reward submission
-  app.post('/api/race/complete', (req, res) => {
-    const auth = verifyBearerSession(req.headers.authorization);
-    if (!auth) {
-      res.status(401).json({ error: 'Authentication required to record ranked race results.' });
-      return;
-    }
-
-    const user = store.users[auth.session.userKey];
-    if (!user) {
-      res.status(401).json({ error: 'Account not found.' });
-      return;
-    }
-
-    const transactionId = String(req.body?.transactionId || '').trim().slice(0, 64);
-    if (!transactionId || transactionId.length < 8) {
-      res.status(400).json({ error: 'Valid race transactionId is required.' });
-      return;
-    }
-    if (claimedRaceTransactions.has(transactionId)) {
-      res.status(409).json({ error: 'Race result already recorded.' });
-      return;
-    }
-
-    const position = Number(req.body?.position);
-    const totalRacers = Number(req.body?.totalRacers || 8);
-    const hitsLanded = Number(req.body?.hitsLanded || 0);
-    const takedowns = Number(req.body?.takedowns || 0);
-    const blocksLanded = Number(req.body?.blocksLanded || 0);
-    const difficulty = String(req.body?.difficulty || 'normal');
-    const vehicle = String(req.body?.vehicle || 'STREET FALCON').trim().slice(0, 24);
-
-    if (!Number.isFinite(position) || position < 1 || position > 8) {
-      res.status(400).json({ error: 'Invalid race position.' });
-      return;
-    }
-
-    claimedRaceTransactions.add(transactionId);
-    if (claimedRaceTransactions.size > 5000) {
-      const oldest = claimedRaceTransactions.values().next().value;
-      if (oldest) claimedRaceTransactions.delete(oldest);
-    }
-
-    // Compute rewards strictly server-side (ignore any client-sent fanPoints / wins / credits)
-    const earned = computeAuthoritativeRaceRewards({
-      position,
-      totalRacers,
-      hitsLanded,
-      takedowns,
-      blocksLanded,
-      difficulty,
+  /**
+   * V6.0 Section 2 & 19 CRITICAL SECURITY BLOCKER REMEDIATION:
+   * Client-submitted race completion claims are explicitly DISABLED for competitive progression.
+   * Verified credits, XP, fan points, wins, and leaderboard rankings are issued EXCLUSIVELY
+   * by server-finished authoritative matches in RoomManager -> PersistenceAdapter.recordVerifiedMatchResult().
+   */
+  app.post('/api/race/complete', (_req, res) => {
+    res.status(403).json({
+      error:
+        'Unverified client-reported race results are disabled. Competitive rewards and rankings are issued exclusively by server-authoritative multiplayer matches.',
+      code: 'CLIENT_RACE_CLAIM_DISABLED',
     });
-
-    user.credits += earned.credits;
-    user.xp += earned.xp;
-    user.fanPoints += earned.fanPoints;
-    user.racesCompleted += 1;
-    if (Math.round(position) === 1) user.wins += 1;
-    user.takedowns += Math.max(0, Math.min(12, Math.round(takedowns)));
-
-    const existing = store.leaderboard.find((e) => e.username.toLowerCase() === user.username.toLowerCase());
-    if (existing) {
-      existing.fanPoints = user.fanPoints;
-      existing.wins = user.wins;
-      existing.vehicle = vehicle;
-      existing.updatedAt = new Date().toISOString();
-    } else {
-      store.leaderboard.push({
-        username: user.username,
-        fanPoints: user.fanPoints,
-        wins: user.wins,
-        vehicle,
-        updatedAt: new Date().toISOString(),
-      });
-    }
-    saveStore(store);
-
-    const { passwordHash: _omit, ...safeUser } = user;
-    res.json({ ok: true, earned, user: safeUser });
   });
 
   const server = http.createServer(app);
 
-  // Real-Time WebSocket Multiplayer Server on /ws (with payload cap)
-  const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 16 * 1024 });
+  // Real-Time Authoritative WebSocket Server on /ws (with Origin check & payload cap)
+  const wss = new WebSocketServer({
+    server,
+    path: '/ws',
+    maxPayload: 16 * 1024,
+    verifyClient: (info, done) => {
+      const ok = isOriginAllowed(info.origin, info.req.headers.host, allowedOrigins);
+      done(ok, ok ? undefined : 403, ok ? undefined : 'Origin not allowed');
+    },
+  });
 
-  wss.on('connection', (ws) => {
+  wss.on('connection', (ws, req) => {
     const playerId = `net_${crypto.randomBytes(6).toString('hex')}`;
-    let currentRoomCode: string | null = null;
+    let authenticatedUserId: string | null = null;
+    let authenticatedUsername: string | null = null;
     let msgCountWindow = 0;
     let windowStart = Date.now();
 
-    ws.send(JSON.stringify({ type: 'welcome', playerId }));
+    // Check optional Bearer token on WebSocket upgrade header
+    const headerAuth = verifyBearerHeader(req.headers.authorization);
+    if (headerAuth) {
+      authenticatedUserId = headerAuth.session.userId;
+      authenticatedUsername = headerAuth.session.username;
+    }
 
-    const leaveCurrentRoom = () => {
-      if (!currentRoomCode) return;
-      const room = rooms.get(currentRoomCode);
-      if (room) {
-        room.players.delete(playerId);
-        if (room.players.size === 0) {
-          rooms.delete(currentRoomCode);
-        } else {
-          if (room.hostId === playerId) {
-            const nextHost = Array.from(room.players.values())[0];
-            if (nextHost) {
-              nextHost.isHost = true;
-              room.hostId = nextHost.id;
-            }
-          }
-          broadcastRoom(room, { type: 'room_state', room: serializeRoom(room) });
-        }
-      }
-      currentRoomCode = null;
-    };
+    ws.send(
+      JSON.stringify({
+        type: 'welcome',
+        playerId,
+        authoritative: true,
+        authenticated: Boolean(authenticatedUserId),
+        username: authenticatedUsername,
+      }),
+    );
 
     ws.on('message', (raw) => {
-      // Rate limiting against WebSocket flooding (max 70 msgs / sec)
+      // Rate limiting against WebSocket flooding (max 120 msgs / sec to comfortably allow 60Hz inputs + control frames)
       const now = Date.now();
       if (now - windowStart > 1000) {
         windowStart = now;
         msgCountWindow = 0;
       }
       msgCountWindow += 1;
-      if (msgCountWindow > 70) return;
+      if (msgCountWindow > 120) {
+        ws.send(JSON.stringify({ type: 'error', code: 'RATE_LIMITED', message: 'Input rate limit exceeded.' }));
+        return;
+      }
 
       let msg: Record<string, unknown>;
       try {
         msg = JSON.parse(String(raw));
       } catch {
+        ws.send(JSON.stringify({ type: 'error', code: 'MALFORMED_JSON', message: 'Invalid JSON frame.' }));
         return;
       }
 
-      if (msg.type === 'ping') {
+      const msgType = typeof msg.type === 'string' ? msg.type : '';
+
+      if (msgType === 'ping') {
         ws.send(JSON.stringify({ type: 'pong', serverTime: now }));
         return;
       }
 
-      if (msg.type === 'list_rooms') {
-        const list = Array.from(rooms.values())
-          .filter((r) => r.status === 'lobby' && r.players.size < 8)
-          .map((r) => ({
-            code: r.code,
-            trackId: r.trackId,
-            mode: r.mode,
-            playerCount: r.players.size,
-            status: r.status,
-          }));
-        ws.send(JSON.stringify({ type: 'rooms_list', rooms: list }));
+      if (msgType === 'auth') {
+        const token = typeof msg.token === 'string' ? msg.token : undefined;
+        const verified = verifyRawToken(token);
+        if (!verified) {
+          ws.send(JSON.stringify({ type: 'auth_result', ok: false, error: 'Invalid or expired session token.' }));
+          return;
+        }
+        authenticatedUserId = verified.session.userId;
+        authenticatedUsername = verified.session.username;
+        ws.send(
+          JSON.stringify({
+            type: 'auth_result',
+            ok: true,
+            userId: authenticatedUserId,
+            username: authenticatedUsername,
+          }),
+        );
         return;
       }
 
-      if (msg.type === 'create_room') {
-        leaveCurrentRoom();
-        const code = generateRoomCode();
-        const rawTrack = String(msg.trackId || 'neon_city');
-        const rawMode = String(msg.mode || 'combat_race');
-        const room: GameRoom = {
-          code,
-          hostId: playerId,
-          trackId: ALLOWED_TRACKS.has(rawTrack) ? rawTrack : 'neon_city',
-          mode: ALLOWED_MODES.has(rawMode) ? rawMode : 'combat_race',
-          laps: Math.max(1, Math.min(5, Math.round(Number(msg.laps || 3)))),
-          status: 'lobby',
-          players: new Map(),
-        };
-        room.players.set(playerId, {
-          id: playerId,
-          name: String(msg.name || 'DRIVER').replace(/[^\w\s-]/g, '').trim().slice(0, 18) || 'DRIVER',
-          vehicleId: String(msg.vehicleId || 'street_falcon').slice(0, 32),
-          customization: (msg.customization as Record<string, unknown>) || {},
-          ready: true,
-          isHost: true,
-          ws,
-          lastStateAt: now,
-          lastX: 0,
-          lastZ: 0,
-          lastInputSeq: 0,
-          lastInput: null,
-        });
-        rooms.set(code, room);
-        currentRoomCode = code;
-        ws.send(JSON.stringify({ type: 'room_state', room: serializeRoom(room) }));
+      if (msgType === 'list_rooms') {
+        ws.send(JSON.stringify({ type: 'rooms_list', rooms: roomManager.listPublicRooms() }));
         return;
       }
 
-      if (msg.type === 'join_room' || msg.type === 'quick_match') {
-        leaveCurrentRoom();
-        let room: GameRoom | undefined;
-        if (msg.type === 'quick_match') {
-          room = Array.from(rooms.values()).find((r) => r.status === 'lobby' && r.players.size < 8);
-          if (!room) {
-            const code = generateRoomCode();
-            room = {
-              code,
-              hostId: playerId,
-              trackId: 'neon_city',
-              mode: 'combat_race',
-              laps: 3,
-              status: 'lobby',
-              players: new Map(),
-            };
-            rooms.set(code, room);
-          }
-        } else {
-          const code = String(msg.code || '').trim().toUpperCase();
-          room = rooms.get(code);
-        }
-
-        if (!room) {
-          ws.send(JSON.stringify({ type: 'error', message: 'Room code not found.' }));
+      if (msgType === 'create_room') {
+        const check = validateCreateRoomPayload(msg);
+        if (!check.ok) {
+          ws.send(JSON.stringify({ type: 'error', code: 'INVALID_PAYLOAD', message: check.reason }));
           return;
         }
-        if (room.players.size >= 8) {
-          ws.send(JSON.stringify({ type: 'error', message: 'Room is full (8/8).' }));
-          return;
-        }
-        if (room.status !== 'lobby') {
-          ws.send(JSON.stringify({ type: 'error', message: 'Race already in progress.' }));
-          return;
-        }
-
-        const isHost = room.players.size === 0;
-        if (isHost) room.hostId = playerId;
-
-        room.players.set(playerId, {
-          id: playerId,
-          name: String(msg.name || 'DRIVER').replace(/[^\w\s-]/g, '').trim().slice(0, 18) || 'DRIVER',
-          vehicleId: String(msg.vehicleId || 'street_falcon').slice(0, 32),
-          customization: (msg.customization as Record<string, unknown>) || {},
-          ready: isHost,
-          isHost,
-          ws,
-          lastStateAt: now,
-          lastX: 0,
-          lastZ: 0,
-          lastInputSeq: 0,
-          lastInput: null,
-        });
-        currentRoomCode = room.code;
-        broadcastRoom(room, { type: 'room_state', room: serializeRoom(room) });
+        roomManager.createRoom(
+          {
+            id: playerId,
+            userId: authenticatedUserId,
+            name: authenticatedUsername || check.payload.name,
+            vehicleId: check.payload.vehicleId,
+            customization: (check.payload.customization as Record<string, unknown>) || {},
+            ws,
+          },
+          {
+            trackId: check.payload.trackId,
+            mode: check.payload.mode,
+            laps: check.payload.laps,
+            fillWithAi: check.payload.fillWithAi,
+          },
+        );
         return;
       }
 
-      if (msg.type === 'leave_room') {
-        leaveCurrentRoom();
+      if (msgType === 'join_room' || msgType === 'quick_match') {
+        const check = validateJoinRoomPayload(msg);
+        if (!check.ok) {
+          ws.send(JSON.stringify({ type: 'error', code: 'INVALID_PAYLOAD', message: check.reason }));
+          return;
+        }
+        const res = roomManager.joinRoom(
+          {
+            id: playerId,
+            userId: authenticatedUserId,
+            name: authenticatedUsername || check.payload.name,
+            vehicleId: check.payload.vehicleId,
+            customization: (check.payload.customization as Record<string, unknown>) || {},
+            ws,
+          },
+          msgType === 'quick_match' ? undefined : check.payload.code,
+        );
+        if (!res.ok) {
+          ws.send(JSON.stringify({ type: 'error', code: 'JOIN_FAILED', message: res.error }));
+        }
+        return;
+      }
+
+      if (msgType === 'leave_room') {
+        roomManager.leaveRoom(playerId);
         ws.send(JSON.stringify({ type: 'room_left' }));
         return;
       }
 
-      if (!currentRoomCode) return;
-      const room = rooms.get(currentRoomCode);
-      if (!room) return;
-      const player = room.players.get(playerId);
-      if (!player) return;
-
-      if (msg.type === 'toggle_ready') {
-        player.ready = !player.ready;
-        broadcastRoom(room, { type: 'room_state', room: serializeRoom(room) });
+      if (msgType === 'toggle_ready') {
+        roomManager.toggleReady(playerId);
         return;
       }
 
-      if (msg.type === 'start_match') {
-        if (room.hostId !== playerId) {
-          ws.send(JSON.stringify({ type: 'error', message: 'Only the host can start the race.' }));
+      if (msgType === 'start_match') {
+        const res = roomManager.startMatch(playerId);
+        if (!res.ok) {
+          ws.send(JSON.stringify({ type: 'error', code: 'START_FAILED', message: res.error }));
+        }
+        return;
+      }
+
+      if (msgType === 'input') {
+        const lastSeq = roomManager.getLastSequence(playerId);
+        const check = validatePlayerInput(msg, lastSeq);
+        if (!check.ok) {
+          ws.send(JSON.stringify({ type: 'error', code: 'INVALID_INPUT', message: check.reason }));
           return;
         }
-        room.status = 'racing';
-        broadcastRoom(room, { type: 'race_start', room: serializeRoom(room) });
-        return;
-      }
-
-      // V5.0 Stage 9: Validated authoritative PlayerInputMessage command protocol
-      if (msg.type === 'input' && room.status === 'racing') {
-        const seq = Number(msg.sequence);
-        if (!Number.isFinite(seq) || seq <= player.lastInputSeq) return;
-        const throttle = Number(msg.throttle);
-        const brake = Number(msg.brake);
-        const steering = Number(msg.steering);
-        if (!Number.isFinite(throttle) || !Number.isFinite(brake) || !Number.isFinite(steering)) return;
-
-        player.lastInputSeq = seq;
-        player.lastInput = {
-          sequence: seq,
-          throttle: Math.max(0, Math.min(1, throttle)),
-          brake: Math.max(0, Math.min(1, brake)),
-          steering: Math.max(-1, Math.min(1, steering)),
-          drift: Boolean(msg.drift),
-          firePowerUp: Boolean(msg.firePowerUp),
-          rearFire: Boolean(msg.rearFire),
-          receivedAt: now,
-        };
-        ws.send(JSON.stringify({ type: 'input_ack', sequence: seq, serverTime: now }));
-        return;
-      }
-
-      if (msg.type === 'racer_state' && room.status === 'racing') {
-        const st = msg.state as Record<string, number | boolean> | undefined;
-        if (!st) return;
-        const x = Number(st.x);
-        const z = Number(st.z);
-        const heading = Number(st.heading);
-        if (!Number.isFinite(x) || !Number.isFinite(z) || !Number.isFinite(heading)) return;
-
-        // Anti-cheat velocity & teleportation sanity clamping
-        const dtSec = Math.max(0.03, (now - player.lastStateAt) / 1000);
-        const dist = player.lastX === 0 && player.lastZ === 0 ? 0 : Math.hypot(x - player.lastX, z - player.lastZ);
-        if (dist > Math.max(25, 130 * dtSec)) {
-          // Reject impossible teleport spike
-          return;
+        const res = roomManager.handlePlayerInput(playerId, check.input);
+        if (res.ok) {
+          ws.send(JSON.stringify({ type: 'input_ack', sequence: check.input.sequence, serverTime: now }));
         }
+        return;
+      }
 
-        const clampedSpeed = Math.max(-30, Math.min(115, Number(st.speed || 0)));
-        const clampedHp = Math.max(0, Math.min(160, Number(st.hp || 100)));
-        player.lastX = x;
-        player.lastZ = z;
-        player.lastStateAt = now;
-
-        broadcastRoom(
-          room,
-          {
-            type: 'racer_snapshot',
-            racer: {
-              id: playerId,
-              name: player.name,
-              vehicleId: player.vehicleId,
-              customization: player.customization,
-              x,
-              z,
-              heading,
-              speed: clampedSpeed,
-              hp: clampedHp,
-              lap: Math.max(1, Math.min(10, Math.round(Number(st.lap || 1)))),
-              totalProgress: Number(st.totalProgress || 0),
-              shieldTimer: Math.max(0, Math.min(6, Number(st.shieldTimer || 0))),
-              nitroTimer: Math.max(0, Math.min(5, Number(st.nitroTimer || 0))),
-              destroyed: Boolean(st.destroyed),
-            },
-          },
-          playerId,
+      // V6.0 Section 15 & 18: Explicitly REJECT legacy client-authoritative racer_state and arbitrary combat_use!
+      if (msgType === 'racer_state' || msgType === 'combat_use') {
+        ws.send(
+          JSON.stringify({
+            type: 'error',
+            code: 'AUTHORITATIVE_ONLY',
+            message: `Message '${msgType}' is rejected in authoritative rooms. Send sequenced 'input' commands only.`,
+          }),
         );
         return;
       }
 
-      if (msg.type === 'combat_use' && room.status === 'racing') {
-        const rawPowerUp = String(msg.powerUpType || msg.typeName || 'BOLT');
-        const safePowerUp = ALLOWED_POWERUPS.has(rawPowerUp) ? rawPowerUp : 'BOLT';
-        broadcastRoom(
-          room,
-          {
-            type: 'combat_event',
-            ownerId: playerId,
-            powerUpType: safePowerUp,
-            rearFired: Boolean(msg.rearFired),
-          },
-          playerId,
-        );
-      }
+      ws.send(JSON.stringify({ type: 'error', code: 'UNKNOWN_MESSAGE', message: `Unknown message type '${msgType}'.` }));
     });
 
     ws.on('close', () => {
-      leaveCurrentRoom();
+      roomManager.leaveRoom(playerId);
     });
   });
 
-  if (isProd) {
-    const distDir = path.resolve(process.cwd(), 'dist');
-    app.use(express.static(distDir));
-    app.get('*', (_req, res) => {
-      res.sendFile(path.join(distDir, 'index.html'));
-    });
-  } else {
-    const vite = await createViteServer({
-      server: { middlewareMode: true, hmr: false },
-      appType: 'spa',
-    });
-    app.use(vite.middlewares);
+  let viteServer: Awaited<ReturnType<typeof createViteServer>> | null = null;
+  if (enableVite) {
+    if (isProd) {
+      const distDir = path.resolve(process.cwd(), 'dist');
+      app.use(express.static(distDir));
+      app.get('*', (_req, res) => {
+        res.sendFile(path.join(distDir, 'index.html'));
+      });
+    } else {
+      viteServer = await createViteServer({
+        server: { middlewareMode: true, hmr: false },
+        appType: 'spa',
+      });
+      app.use(viteServer.middlewares);
+    }
   }
 
-  server.listen(PORT, '0.0.0.0', () => {
-    console.log(`[NEON RIVALS] Server listening on http://0.0.0.0:${PORT}`);
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(port, host, () => {
+      server.off('error', reject);
+      resolve();
+    });
   });
+
+  const addr = server.address();
+  const actualPort = typeof addr === 'object' && addr ? addr.port : port;
+  const connectHost = host === '0.0.0.0' ? '127.0.0.1' : host;
+
+  const close = async (): Promise<void> => {
+    roomManager.shutdown();
+    for (const client of wss.clients) {
+      client.terminate();
+    }
+    await new Promise<void>((resolve) => wss.close(() => resolve()));
+    if (viteServer) {
+      await viteServer.close();
+    }
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  };
+
+  return {
+    app,
+    server,
+    wss,
+    persistence,
+    roomManager,
+    port: actualPort,
+    url: `http://${connectHost}:${actualPort}`,
+    wsUrl: `ws://${connectHost}:${actualPort}/ws`,
+    close,
+  };
 }
 
-startServer();
+// Auto-start only when executed directly as entry point (tsx server.ts / node server.ts)
+const isDirectMain = (() => {
+  try {
+    const entryPath = process.argv[1] ? path.resolve(process.argv[1]) : '';
+    const selfPath = path.resolve(fileURLToPath(import.meta.url));
+    return entryPath === selfPath;
+  } catch {
+    return false;
+  }
+})();
+
+if (isDirectMain) {
+  createAppServer()
+    .then((running) => {
+      console.log(`[NEON RIVALS] Authoritative Server listening on http://0.0.0.0:${running.port}`);
+      const shutdown = async () => {
+        await running.close();
+        process.exit(0);
+      };
+      process.once('SIGINT', shutdown);
+      process.once('SIGTERM', shutdown);
+    })
+    .catch((err) => {
+      console.error('[NEON RIVALS] Failed to start server:', err);
+      process.exit(1);
+    });
+}

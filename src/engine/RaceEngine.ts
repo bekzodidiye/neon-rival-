@@ -25,6 +25,7 @@ import {
   generateTrackPickups,
   getSpawnGridTransform,
   normalizeT,
+  projectPointToTrack,
   sampleTrackAt,
   sortRaceStandings,
   updateRacerCheckpoints,
@@ -52,7 +53,9 @@ import {
 import { resolveCarCollisions, stepVehiclePhysics } from '../game/physics';
 import { AI_DRIVER_NAMES, computeAiInput } from '../game/ai';
 import { createProceduralTexturePack, type ProceduralTexturePack } from './proceduralTextures';
-import { applyVehicleCustomization, buildVehicleRig, type VehicleRig } from './vehicleMesh';
+import { applyVehicleCustomization, type VehicleRig } from './vehicleMesh';
+import { VehicleAssetLoader } from './assets/VehicleAssetLoader';
+import { createEnvironmentSceneForProfile, getLightingForTrack, type LightingProfile } from './lighting';
 import { buildTrackScene, type BuiltTrackScene } from './trackMesh';
 import { RacingAudioEngine } from './audio';
 import { RacingInputHub } from './input';
@@ -63,49 +66,19 @@ import {
   type CameraSpeedStreakRig,
 } from './motionBlur';
 import { ChaseCameraController } from './camera/ChaseCamera';
+import type {
+  AuthoritativeMatchResult,
+  AuthoritativeWorldSnapshot,
+  PlayerInputPayload,
+} from '../../shared/protocol/messages';
 
 export type EngineMode = 'title' | 'garage' | 'playing' | 'paused' | 'results';
-
-export interface RemoteRacerPatch {
-  id: string;
-  name: string;
-  vehicleId: string;
-  customization: VehicleCustomization;
-  x: number;
-  z: number;
-  heading: number;
-  speed: number;
-  hp: number;
-  lap: number;
-  totalProgress: number;
-  shieldTimer: number;
-  nitroTimer: number;
-  destroyed: boolean;
-}
 
 export interface EngineCallbacks {
   onHudUpdate: (snapshot: RaceHudSnapshot) => void;
   onPauseToggle: () => void;
   onRaceFinished: (snapshot: RaceHudSnapshot) => void;
-  onSendMultiplayerState?: (state: {
-    x: number;
-    z: number;
-    heading: number;
-    speed: number;
-    hp: number;
-    lap: number;
-    totalProgress: number;
-    shieldTimer: number;
-    nitroTimer: number;
-    destroyed: boolean;
-  }) => void;
-  onSendMultiplayerCombat?: (event: {
-    type: PowerUpType;
-    rearFired: boolean;
-    x: number;
-    z: number;
-    heading: number;
-  }) => void;
+  onSendPlayerInput?: (input: Omit<PlayerInputPayload, 'sequence'>) => number;
 }
 
 interface PooledParticle {
@@ -143,40 +116,7 @@ function detectSoftwareWebGL(): boolean {
   }
 }
 
-/**
- * Custom dark midnight neon PMREM scene so metallic cars and wet asphalt reflect
- * deep indigo skies plus vibrant cyan/magenta/amber street strips — never a white studio ceiling.
- */
-function createNightCityEnvScene(): THREE.Scene {
-  const env = new THREE.Scene();
-  env.background = new THREE.Color(0x060a18);
-
-  const shellGeo = new THREE.BoxGeometry(30, 18, 30);
-  const shellMat = new THREE.MeshBasicMaterial({ color: 0x070c1c, side: THREE.BackSide });
-  env.add(new THREE.Mesh(shellGeo, shellMat));
-
-  const strips: { pos: [number, number, number]; size: [number, number, number]; color: number }[] = [
-    // Deep violet-indigo overhead night haze (keeps car roofs sleek & dark, never white)
-    { pos: [0, 8.6, 0], size: [18, 0.2, 18], color: 0x1b2b58 },
-    // Cyan neon city horizon bar (left)
-    { pos: [-14.2, 1.8, 0], size: [0.3, 2.2, 22], color: 0x00c8ff },
-    // Magenta neon city horizon bar (right)
-    { pos: [14.2, 1.8, 0], size: [0.3, 2.2, 22], color: 0xff2a85 },
-    // Cool cyan-blue distant skyline glow (front)
-    { pos: [0, 2.4, 14.2], size: [22, 1.8, 0.3], color: 0x3b82f6 },
-    // Warm amber/crimson streetlamp reflection (back)
-    { pos: [0, 2.0, -14.2], size: [20, 1.6, 0.3], color: 0xff6b35 },
-  ];
-  for (const s of strips) {
-    const m = new THREE.Mesh(
-      new THREE.BoxGeometry(s.size[0], s.size[1], s.size[2]),
-      new THREE.MeshBasicMaterial({ color: s.color }),
-    );
-    m.position.set(s.pos[0], s.pos[1], s.pos[2]);
-    env.add(m);
-  }
-  return env;
-}
+// Lighting environments are built via createEnvironmentSceneForProfile() in ./lighting.ts
 
 export class RaceEngine {
   private container: HTMLElement;
@@ -201,7 +141,29 @@ export class RaceEngine {
   private envRT: THREE.WebGLRenderTarget | null = null;
   private keyLight: THREE.DirectionalLight;
   private hemiLight: THREE.HemisphereLight;
+  private activeLighting: LightingProfile = getLightingForTrack('neon_city');
   private textures: ProceduralTexturePack;
+  private vehicleLoader = new VehicleAssetLoader();
+
+  // Authoritative multiplayer prediction & remote interpolation buffers
+  private localNetPlayerId: string | null = null;
+  private pendingInputs: {
+    seq: number;
+    dt: number;
+    throttle: number;
+    brake: number;
+    steer: number;
+    drift: boolean;
+    recover: boolean;
+  }[] = [];
+  private remoteBuffers = new Map<
+    string,
+    {
+      prev: { x: number; y: number; z: number; heading: number; speed: number; t: number };
+      curr: { x: number; y: number; z: number; heading: number; speed: number; t: number };
+    }
+  >();
+  private lastAppliedEventSeq = 0;
 
   // World objects
   private currentTrack: BuiltTrack;
@@ -258,7 +220,6 @@ export class RaceEngine {
   private eliminationTimer = 25;
   private combatFeed: CombatFeedItem[] = [];
   private hudEmitAccum = 0;
-  private netEmitAccum = 0;
   private pingMs = 0;
   private fpsSamples = 0;
   private fpsAccum = 0;
@@ -318,19 +279,11 @@ export class RaceEngine {
     this.motionBlurEnabled = initialSettings.motionBlur !== false;
     this.renderer.setSize(w, h, false);
 
-    // Custom dark Night-City Neon PMREM for glossy metallic car reflections & glare-free dark wet asphalt
-    const pmrem = new THREE.PMREMGenerator(this.renderer);
-    const envScene = createNightCityEnvScene();
-    this.envRT = pmrem.fromScene(envScene, 0.04);
-    this.scene.environment = this.envRT.texture;
-    this.scene.environmentIntensity = 0.85;
-    pmrem.dispose();
-
-    // Readable metropolitan night sky/ground fill + cross-angled moonlight key light
-    this.hemiLight = new THREE.HemisphereLight(0x5a7ec8, 0x1b2234, 0.68);
+    // Distinct Day/Sunset/Night PBR lighting & matching PMREM environment map
+    this.hemiLight = new THREE.HemisphereLight(0x5a7ec8, 0x1b2234, 0.72);
     this.scene.add(this.hemiLight);
 
-    this.keyLight = new THREE.DirectionalLight(0xcfe0ff, 1.15);
+    this.keyLight = new THREE.DirectionalLight(0xd8e6ff, 1.2);
     this.keyLight.position.set(88, 56, -52);
     this.keyLight.castShadow = !this.isSoftwareGl;
     this.keyLight.shadow.mapSize.set(1024, 1024);
@@ -475,14 +428,42 @@ export class RaceEngine {
     this.garageGroup.rotation.y = Math.atan2(s.tx, s.tz);
   }
 
+  private applyLightingProfile(profile: LightingProfile): void {
+    this.activeLighting = profile;
+    this.scene.background = new THREE.Color(profile.skyColor);
+    this.scene.fog = new THREE.FogExp2(profile.fogColor, profile.fogDensity);
+    this.hemiLight.color.setHex(profile.hemiSkyColor);
+    this.hemiLight.groundColor.setHex(profile.hemiGroundColor);
+    this.hemiLight.intensity = profile.hemiIntensity;
+    this.keyLight.color.setHex(profile.keyColor);
+    this.keyLight.intensity = profile.keyIntensity;
+    this.keyLight.position.set(profile.keyOffset[0], profile.keyOffset[1], profile.keyOffset[2]);
+    this.renderer.toneMappingExposure = profile.exposure;
+    this.scene.environmentIntensity = profile.envIntensity;
+
+    if (this.bloomPass) {
+      this.bloomPass.strength = profile.bloomStrength;
+      this.bloomPass.threshold = profile.bloomThreshold;
+    }
+
+    const pmrem = new THREE.PMREMGenerator(this.renderer);
+    const envScene = createEnvironmentSceneForProfile(profile);
+    const nextEnv = pmrem.fromScene(envScene, 0.04);
+    if (this.envRT) {
+      this.envRT.dispose();
+    }
+    this.envRT = nextEnv;
+    this.scene.environment = this.envRT.texture;
+    pmrem.dispose();
+  }
+
   private rebuildTrackScene(): void {
     if (this.trackScene) {
       this.scene.remove(this.trackScene.group);
       this.trackScene.dispose();
       this.trackScene = null;
     }
-    this.scene.background = new THREE.Color(this.currentTrack.def.skyColor);
-    this.scene.fog = new THREE.FogExp2(this.currentTrack.def.fogColor, this.currentTrack.def.fogDensity);
+    this.applyLightingProfile(getLightingForTrack(this.currentTrack.def.id));
 
     this.trackScene = buildTrackScene(this.currentTrack, this.textures, this.pickups);
     this.scene.add(this.trackScene.group);
@@ -499,18 +480,16 @@ export class RaceEngine {
     }
     const cfg = getVehicleById(vehicleId);
     this.garageVehicleId = vehicleId;
-    this.garageHeroRig = buildVehicleRig(
-      cfg.archetype,
+    this.garageHeroRig = this.vehicleLoader.instantiateVehicleRig(
+      cfg,
       customization,
-      this.textures.contactShadow,
-      !this.isSoftwareGl,
-      this.textures.neonGlow,
-      this.textures.headlightBeam,
-      this.textures.tailTrail,
       {
-        dimensions: cfg.dimensions,
-        handlingArchetype: cfg.handlingArchetype,
+        contactShadow: this.textures.contactShadow,
+        neonGlow: this.textures.neonGlow,
+        headlightBeam: this.textures.headlightBeam,
+        tailTrail: this.textures.tailTrail,
       },
+      !this.isSoftwareGl,
     );
     this.garageHeroRig.root.position.set(0, 0.07, 0);
     this.garageGroup.add(this.garageHeroRig.root);
@@ -759,18 +738,16 @@ export class RaceEngine {
         lastSafeTrackT: spawn.trackT,
       };
 
-      const rig = buildVehicleRig(
-        carDef.archetype,
+      const rig = this.vehicleLoader.instantiateVehicleRig(
+        carDef,
         entry.customization,
-        this.textures.contactShadow,
-        !this.isSoftwareGl && (entry.isPlayer || idx < 4),
-        this.textures.neonGlow,
-        this.textures.headlightBeam,
-        this.textures.tailTrail,
         {
-          dimensions: carDef.dimensions,
-          handlingArchetype: carDef.handlingArchetype,
+          contactShadow: this.textures.contactShadow,
+          neonGlow: this.textures.neonGlow,
+          headlightBeam: this.textures.headlightBeam,
+          tailTrail: this.textures.tailTrail,
         },
+        !this.isSoftwareGl && (entry.isPlayer || idx < 4),
       );
       rig.root.position.set(state.x, state.y, state.z);
       rig.root.rotation.y = state.heading;
@@ -789,6 +766,10 @@ export class RaceEngine {
       this.camera.lookAt(this.currentCamLook);
     }
 
+    this.pendingInputs = [];
+    this.remoteBuffers.clear();
+    this.lastAppliedEventSeq = 0;
+
     this.racePhase = 'countdown';
     this.countdownTimer = 2.1;
     this.lastCountdownInt = 4;
@@ -802,26 +783,359 @@ export class RaceEngine {
     this.emitHudSnapshot();
   }
 
-  /** Apply remote multiplayer racer state update with smooth blending. */
-  public applyRemoteRacerUpdate(patch: RemoteRacerPatch): void {
-    const target = this.racers.find((r) => r.id === patch.id && r.isRemote);
-    if (!target) return;
-    target.x += (patch.x - target.x) * 0.45;
-    target.z += (patch.z - target.z) * 0.45;
-    target.heading = patch.heading;
-    target.speed = patch.speed;
-    target.hp = patch.hp;
-    target.lap = patch.lap;
-    target.totalProgress = patch.totalProgress;
-    target.shieldTimer = patch.shieldTimer;
-    target.nitroTimer = patch.nitroTimer;
-    target.destroyed = patch.destroyed;
+  public setLocalNetworkPlayerId(playerId: string | null): void {
+    this.localNetPlayerId = playerId;
   }
 
-  public applyRemoteCombatEvent(ownerId: string, type: PowerUpType, rearFired: boolean): void {
-    const owner = this.racers.find((r) => r.id === ownerId);
-    if (!owner) return;
-    this.executePowerUpEffect(owner, type, rearFired, true);
+  /**
+   * V6.0 Sections 15 & 17: Applies an authoritative server world snapshot.
+   * - Local player: resets to server state and replays unacknowledged pending inputs for smooth reconciliation.
+   * - Remote players & AI: updates interpolation buffers for jitter-free rendering.
+   * - Syncs authoritative pickups, projectiles, mines, shock zones, barge waves, and combat events.
+   */
+  public applyAuthoritativeSnapshot(snapshot: AuthoritativeWorldSnapshot): void {
+    if (!this.raceConfig?.isMultiplayer || this.mode !== 'playing') return;
+
+    this.racePhase = snapshot.phase;
+    this.countdownTimer = snapshot.countdownTimer;
+    this.raceTime = snapshot.raceTime;
+
+    const nowMs = performance.now();
+    const myId = this.localNetPlayerId;
+
+    // Ensure every server racer has a local RacerState + 3D rig
+    for (const sr of snapshot.racers) {
+      const isLocal = Boolean(myId && sr.id === myId);
+      let existingRacer = isLocal
+        ? this.racers.find((r) => r.isPlayer)
+        : this.racers.find((r) => r.id === sr.id);
+
+      if (!existingRacer) {
+        const carDef = getVehicleById(sr.vehicleId);
+        const custom: VehicleCustomization = { ...carDef.defaultCustomization };
+        const proj = projectPointToTrack(this.currentTrack, sr.x, sr.z);
+        existingRacer = {
+          id: sr.id,
+          name: sr.name,
+          isPlayer: isLocal,
+          isRemote: !isLocal,
+          vehicleId: sr.vehicleId,
+          customization: custom,
+          x: sr.x,
+          y: sr.y,
+          z: sr.z,
+          vx: sr.vx,
+          vz: sr.vz,
+          heading: sr.heading,
+          angularVel: 0,
+          speed: sr.speed,
+          lateralSpeed: sr.lateralSpeed,
+          steerAngle: sr.steerAngle,
+          wheelSpin: 0,
+          bodyPitch: sr.bodyPitch,
+          bodyRoll: sr.bodyRoll,
+          isDrifting: sr.isDrifting,
+          driftTime: 0,
+          nitroTimer: sr.nitroTimer,
+          nitroEnergy: 0,
+          shieldTimer: sr.shieldTimer,
+          shockSlowTimer: sr.shockSlowTimer,
+          stunTimer: 0,
+          spawnProtectTimer: 0,
+          hitFlashTimer: 0,
+          hp: sr.hp,
+          maxHp: sr.maxHp,
+          maxHealthBlocks: carDef.stats.maxHealthBlocks,
+          shieldHp: sr.shieldHp,
+          airBrakeBoostTimer: 0,
+          comboCount: 0,
+          comboTimer: 0,
+          destroyed: sr.destroyed,
+          respawnTimer: 0,
+          inventory: sr.inventory.map((slot) => (slot ? { ...slot } : null)),
+          activeSlot: sr.activeSlot,
+          rearFireMode: false,
+          boltCooldown: 0,
+          trackT: proj.t,
+          lateralOffset: proj.lateralOffset,
+          lap: sr.lap,
+          nextCheckpoint: sr.passedCheckpoints,
+          passedCheckpoints: sr.passedCheckpoints,
+          totalProgress: sr.totalProgress,
+          position: sr.position,
+          finished: sr.finished,
+          finishTime: sr.finishTime,
+          lapStartTime: 0,
+          bestLapTime: 0,
+          wrongWay: false,
+          eliminated: sr.eliminated,
+          hitsLanded: sr.hitsLanded,
+          takedowns: sr.takedowns,
+          powerUpsUsed: 0,
+          blocksLanded: sr.blocksLanded,
+          damageDealt: 0,
+          raceFans: sr.raceFans,
+          isDrafting: sr.isDrafting,
+          aiLaneOffset: proj.lateralOffset,
+          aiLaneTimer: 1,
+          aiDecisionTimer: 2,
+          aiAggression: 0.5,
+          vy: 0,
+          grounded: true,
+          airborneTime: 0,
+          suspCompression: [0, 0, 0, 0],
+          lastSafeTrackT: proj.t,
+        };
+        this.racers.push(existingRacer);
+        const rig = this.vehicleLoader.instantiateVehicleRig(
+          carDef,
+          custom,
+          {
+            contactShadow: this.textures.contactShadow,
+            neonGlow: this.textures.neonGlow,
+            headlightBeam: this.textures.headlightBeam,
+            tailTrail: this.textures.tailTrail,
+          },
+          !this.isSoftwareGl && isLocal,
+        );
+        rig.root.position.set(sr.x, sr.y, sr.z);
+        rig.root.rotation.y = sr.heading;
+        this.scene.add(rig.root);
+        this.racerRigs.set(existingRacer.id, rig);
+      }
+
+      const racer: RacerState = existingRacer;
+
+      // Sync authoritative combat, health, inventory, lap & standings
+      racer.hp = sr.hp;
+      racer.maxHp = sr.maxHp;
+      racer.nitroTimer = sr.nitroTimer;
+      racer.shieldTimer = sr.shieldTimer;
+      racer.shieldHp = sr.shieldHp;
+      racer.shockSlowTimer = sr.shockSlowTimer;
+      racer.destroyed = sr.destroyed;
+      racer.eliminated = sr.eliminated;
+      racer.finished = sr.finished;
+      racer.finishTime = sr.finishTime;
+      racer.lap = sr.lap;
+      racer.passedCheckpoints = sr.passedCheckpoints;
+      racer.totalProgress = sr.totalProgress;
+      racer.position = sr.position;
+      racer.isDrafting = sr.isDrafting;
+      racer.hitsLanded = sr.hitsLanded;
+      racer.takedowns = sr.takedowns;
+      racer.blocksLanded = sr.blocksLanded;
+      racer.raceFans = sr.raceFans;
+      racer.inventory = sr.inventory.map((slot) => (slot ? { ...slot } : null));
+      racer.activeSlot = sr.activeSlot;
+
+      if (isLocal) {
+        // Client-side prediction reconciliation (keep unacked inputs, smoothly correct residual error)
+        const prevX = racer.x;
+        const prevZ = racer.z;
+        const prevHeading = racer.heading;
+        this.pendingInputs = this.pendingInputs.filter((p) => p.seq > sr.lastProcessedInputSeq);
+
+        const proj = projectPointToTrack(this.currentTrack, sr.x, sr.z);
+        racer.x = sr.x;
+        racer.y = sr.y;
+        racer.z = sr.z;
+        racer.vx = sr.vx;
+        racer.vz = sr.vz;
+        racer.heading = sr.heading;
+        racer.speed = sr.speed;
+        racer.lateralSpeed = sr.lateralSpeed;
+        racer.steerAngle = sr.steerAngle;
+        racer.trackT = proj.t;
+        racer.lateralOffset = proj.lateralOffset;
+
+        for (const pending of this.pendingInputs) {
+          stepVehiclePhysics(
+            racer,
+            {
+              throttle: pending.throttle,
+              brake: pending.brake,
+              steer: pending.steer,
+              drift: pending.drift,
+              usePowerUp: false,
+              useNitro: false,
+              instantRearFire: false,
+              rearView: false,
+              rearFire: false,
+              cycleSlot: false,
+              discardSlot: false,
+              selectSlot: -1,
+              recover: pending.recover,
+            },
+            this.currentTrack,
+            pending.dt,
+            this.racePhase === 'racing',
+          );
+        }
+
+        // Smooth small prediction discrepancies (< 4.5m) instead of snapping violently
+        const errDist = Math.hypot(racer.x - prevX, racer.z - prevZ);
+        if (errDist > 0.05 && errDist < 4.5) {
+          racer.x = prevX + (racer.x - prevX) * 0.35;
+          racer.z = prevZ + (racer.z - prevZ) * 0.35;
+          let dh = racer.heading - prevHeading;
+          while (dh > Math.PI) dh -= Math.PI * 2;
+          while (dh < -Math.PI) dh += Math.PI * 2;
+          racer.heading = prevHeading + dh * 0.35;
+        }
+      } else {
+        const proj = projectPointToTrack(this.currentTrack, sr.x, sr.z);
+        racer.isRemote = true;
+        racer.bodyPitch = sr.bodyPitch;
+        racer.bodyRoll = sr.bodyRoll;
+        racer.steerAngle = sr.steerAngle;
+        racer.isDrifting = sr.isDrifting;
+        racer.lateralSpeed = sr.lateralSpeed;
+        racer.trackT = proj.t;
+        racer.lateralOffset = proj.lateralOffset;
+
+        const existingBuf = this.remoteBuffers.get(racer.id);
+        const nextSample = { x: sr.x, y: sr.y, z: sr.z, heading: sr.heading, speed: sr.speed, t: nowMs };
+        if (existingBuf) {
+          existingBuf.prev = existingBuf.curr;
+          existingBuf.curr = nextSample;
+        } else {
+          this.remoteBuffers.set(racer.id, { prev: nextSample, curr: nextSample });
+          racer.x = sr.x;
+          racer.y = sr.y;
+          racer.z = sr.z;
+          racer.heading = sr.heading;
+          racer.speed = sr.speed;
+        }
+      }
+    }
+
+    // Sync authoritative pickup active states
+    const activeMap = new Map(snapshot.pickups.map((p) => [p.id, p.active]));
+    for (const node of this.pickups) {
+      const state = activeMap.get(node.id);
+      if (state !== undefined) node.active = state;
+    }
+
+    // Sync authoritative projectiles, mines, shock domes
+    this.syncAuthoritativeCombatMeshes(snapshot);
+
+    // Trigger VFX / SFX / HUD feed for newly received authoritative simulation events
+    for (const ev of snapshot.events) {
+      if (ev.seq <= this.lastAppliedEventSeq) continue;
+      this.lastAppliedEventSeq = ev.seq;
+      const targetRacer = this.racers.find((r) => r.id === (ev.targetId ?? ev.actorId));
+      if (ev.type === 'pickup' && ev.actorId === myId && ev.powerUp) {
+        this.audio.playPickup();
+        this.pushFeed(`ACQUIRED ${ev.powerUp}`, POWERUP_DEFS[ev.powerUp].color);
+      } else if (ev.type === 'powerup_fire' && ev.actorId === myId && ev.powerUp) {
+        this.audio.playPowerUp(ev.powerUp);
+      } else if (ev.type === 'shield_block') {
+        if (targetRacer) this.spawnBurst(targetRacer.x, targetRacer.y + 1.0, targetRacer.z, 14, 0x00d8ff, 12);
+        if (ev.targetId === myId || ev.actorId === myId) this.audio.playShieldBlock();
+      } else if (ev.type === 'damage' || ev.type === 'wreck') {
+        if (targetRacer) {
+          this.spawnBurst(
+            targetRacer.x,
+            targetRacer.y + 1.0,
+            targetRacer.z,
+            ev.type === 'wreck' ? 32 : 16,
+            0xff365e,
+            ev.type === 'wreck' ? 18 : 12,
+          );
+        }
+        if (ev.targetId === myId || ev.actorId === myId) {
+          this.audio.playImpact(true);
+          this.chaseCamera.addTrauma(ev.type === 'wreck' ? 0.85 : 0.45);
+          if (ev.type === 'wreck') {
+            this.pushFeed(ev.targetId === myId ? 'WRECKED!' : 'TAKEDOWN!', '#FF365E');
+          }
+        }
+      }
+    }
+  }
+
+  private syncAuthoritativeCombatMeshes(snapshot: AuthoritativeWorldSnapshot): void {
+    // Projectiles
+    const projIds = new Set(snapshot.projectiles.map((p) => p.id));
+    for (const [id, mesh] of this.projectileMeshes.entries()) {
+      if (!projIds.has(id)) {
+        this.combatGroup.remove(mesh);
+        this.projectileMeshes.delete(id);
+      }
+    }
+    for (const p of snapshot.projectiles) {
+      let mesh = this.projectileMeshes.get(p.id);
+      if (!mesh) {
+        mesh = new THREE.Mesh(
+          p.type === 'SHUNT' ? this.shuntGeo : this.boltGeo,
+          p.type === 'SHUNT' ? this.shuntMat : this.boltMat,
+        );
+        this.combatGroup.add(mesh);
+        this.projectileMeshes.set(p.id, mesh);
+      }
+      mesh.position.set(p.x, p.y, p.z);
+    }
+
+    // Mines
+    const mineIds = new Set(snapshot.mines.map((m) => m.id));
+    for (const [id, mesh] of this.mineMeshes.entries()) {
+      if (!mineIds.has(id)) {
+        this.combatGroup.remove(mesh);
+        this.mineMeshes.delete(id);
+      }
+    }
+    for (const m of snapshot.mines) {
+      let mesh = this.mineMeshes.get(m.id);
+      if (!mesh) {
+        mesh = new THREE.Mesh(this.mineGeo, this.mineMat);
+        this.combatGroup.add(mesh);
+        this.mineMeshes.set(m.id, mesh);
+      }
+      mesh.position.set(m.x, m.y, m.z);
+    }
+
+    // Shock domes
+    const shockIds = new Set(snapshot.shockZones.map((s) => s.id));
+    for (const [id, g] of this.shockMeshes.entries()) {
+      if (!shockIds.has(id)) {
+        this.combatGroup.remove(g);
+        this.shockMeshes.delete(id);
+      }
+    }
+    for (const sz of snapshot.shockZones) {
+      if (!this.shockMeshes.has(sz.id)) {
+        const g = new THREE.Group();
+        g.position.set(sz.x, sz.y + 0.05, sz.z);
+        const dome = new THREE.Mesh(
+          this.shockDomeGeo,
+          new THREE.MeshBasicMaterial({ color: 0x3b82f6, wireframe: true, transparent: true, opacity: 0.9 }),
+        );
+        dome.scale.set(sz.radius, sz.radius * 0.85, sz.radius);
+        g.add(dome);
+        this.combatGroup.add(g);
+        this.shockMeshes.set(sz.id, g);
+      }
+    }
+  }
+
+  public applyAuthoritativeMatchFinished(result: AuthoritativeMatchResult): void {
+    if (!this.raceConfig?.isMultiplayer) return;
+    // Sync final standings from verified server result
+    for (const st of result.standings) {
+      const r =
+        st.playerId === this.localNetPlayerId
+          ? this.getPlayerRacer()
+          : this.racers.find((x) => x.id === st.playerId);
+      if (r) {
+        r.position = st.position;
+        r.finished = true;
+        r.finishTime = st.finishTime;
+        r.hitsLanded = st.hitsLanded;
+        r.takedowns = st.takedowns;
+      }
+    }
+    this.finishRaceNow();
   }
 
   private getPlayerRacer(): RacerState | undefined {
@@ -1104,9 +1418,76 @@ export class RaceEngine {
       }
 
       // Step all racers
+      const isAuthMp = Boolean(this.raceConfig?.isMultiplayer);
+      const nowPerf = performance.now();
       for (const racer of this.racers) {
         if (racer.isRemote) {
+          // Smooth snapshot interpolation with bounded extrapolation (<= 120ms) in authoritative multiplayer
+          const buf = this.remoteBuffers.get(racer.id);
+          if (buf) {
+            const span = Math.max(16, buf.curr.t - buf.prev.t);
+            const alpha = Math.min(1.12, (nowPerf - buf.curr.t) / span);
+            const lerpT = Math.max(0, Math.min(1, alpha));
+            if (alpha <= 1) {
+              racer.x += (buf.curr.x - racer.x) * Math.min(1, 0.35 + lerpT * 0.45);
+              racer.y += (buf.curr.y - racer.y) * 0.45;
+              racer.z += (buf.curr.z - racer.z) * Math.min(1, 0.35 + lerpT * 0.45);
+            } else {
+              // Bounded dead-reckoning for up to 120ms between snapshots
+              const extraDt = Math.min(0.12, (nowPerf - buf.curr.t) / 1000);
+              racer.x = buf.curr.x + Math.sin(buf.curr.heading) * buf.curr.speed * extraDt;
+              racer.z = buf.curr.z + Math.cos(buf.curr.heading) * buf.curr.speed * extraDt;
+            }
+            let dh = buf.curr.heading - racer.heading;
+            while (dh > Math.PI) dh -= Math.PI * 2;
+            while (dh < -Math.PI) dh += Math.PI * 2;
+            racer.heading += dh * 0.4;
+            racer.speed = buf.curr.speed;
+          }
           racer.wheelSpin += (racer.speed / 0.38) * simDt;
+          continue;
+        }
+
+        // In authoritative multiplayer, server owns AI, combat, pickups, and standings;
+        // local player streams sequenced PlayerInputPayload and runs local physics prediction.
+        if (isAuthMp) {
+          if (!racer.isPlayer) continue;
+          if (this.callbacks.onSendPlayerInput) {
+            const seq = this.callbacks.onSendPlayerInput({
+              throttle: stepControl.throttle,
+              brake: stepControl.brake,
+              steering: stepControl.steer,
+              drift: stepControl.drift,
+              firePowerUp: stepControl.usePowerUp,
+              rearFire: Boolean(stepControl.instantRearFire || racer.rearFireMode),
+              cycleSlot: stepControl.cycleSlot,
+              discardSlot: stepControl.discardSlot,
+              selectSlot: stepControl.selectSlot,
+              recover: stepControl.recover,
+            });
+            if (seq > 0) {
+              this.pendingInputs.push({
+                seq,
+                dt: simDt,
+                throttle: stepControl.throttle,
+                brake: stepControl.brake,
+                steer: stepControl.steer,
+                drift: stepControl.drift,
+                recover: stepControl.recover,
+              });
+              if (this.pendingInputs.length > 120) {
+                this.pendingInputs.shift();
+              }
+            }
+          }
+          const physEvents = stepVehiclePhysics(racer, stepControl, this.currentTrack, simDt, canDrive);
+          if (stepIdx === subSteps - 1) {
+            const carTop = getVehicleById(racer.vehicleId).stats.topSpeed;
+            const speedRatio = Math.min(1.3, Math.abs(racer.speed) / carTop);
+            const gearFloat = speedRatio * 5.8;
+            const rpmRatio = Math.max(0.15, Math.min(1, gearFloat - Math.floor(gearFloat) + 0.22));
+            this.audio.updateEngine(speedRatio, rpmRatio, physEvents.driftIntensity, physEvents.nitroActive);
+          }
           continue;
         }
 
@@ -1211,32 +1592,39 @@ export class RaceEngine {
         }
       }
 
-      // Car-to-car collisions
-      const carImpacts = resolveCarCollisions(this.racers);
-      for (const imp of carImpacts) {
-        this.spawnBurst(imp.x, 0.8, imp.z, 8, 0xffd166, 12);
-        if (imp.aId === 'player_local' || imp.bId === 'player_local') {
-          this.chaseCamera.addTrauma(imp.pairImpact * 0.55);
-          this.audio.playImpact(imp.pairImpact > 0.55);
+      if (!isAuthMp) {
+        // Car-to-car collisions (single-player offline)
+        const carImpacts = resolveCarCollisions(this.racers);
+        for (const imp of carImpacts) {
+          this.spawnBurst(imp.x, 0.8, imp.z, 8, 0xffd166, 12);
+          if (imp.aId === 'player_local' || imp.bId === 'player_local') {
+            this.chaseCamera.addTrauma(imp.pairImpact * 0.55);
+            this.audio.playImpact(imp.pairImpact > 0.55);
+          }
         }
-      }
 
-      // Update Pickups, Projectiles, Mines, Shock Domes, Barge Waves, Particles
-      this.updatePickups(simDt);
-      this.updateCombatEntities(simDt);
+        // Update Pickups, Projectiles, Mines, Shock Domes, Barge Waves
+        this.updatePickups(simDt);
+        this.updateCombatEntities(simDt);
+      } else {
+        this.animatePickups(simDt);
+      }
       this.updateParticles(stepBaseDt);
     }
 
-    // Sort standings
-    sortRaceStandings(this.racers);
+    // Sort standings (single-player; in multiplayer standings come from authoritative snapshot)
+    if (!this.raceConfig?.isMultiplayer) {
+      sortRaceStandings(this.racers);
+    }
 
     // Sync 3D vehicle meshes
     this.syncVehicleRigs(frameDt);
 
-    // Update chase camera & follow cross-angled directional light (zero forward road glare)
+    // Update chase camera & follow track-matched directional light
     if (player) {
       this.updateRaceCamera(player, control.rearView, frameDt);
-      this.keyLight.position.set(player.x + 88, 56, player.z - 52);
+      const [kx, ky, kz] = this.activeLighting.keyOffset;
+      this.keyLight.position.set(player.x + kx, player.y + ky, player.z + kz);
       this.keyLight.target.position.set(player.x, player.y, player.z);
     }
 
@@ -1246,40 +1634,11 @@ export class RaceEngine {
       this.hudEmitAccum = 0;
       this.emitHudSnapshot();
     }
-
-    // Multiplayer outbound state sync (20 Hz)
-    if (this.raceConfig?.isMultiplayer && player && this.callbacks.onSendMultiplayerState) {
-      this.netEmitAccum += frameDt;
-      if (this.netEmitAccum >= 0.05) {
-        this.netEmitAccum = 0;
-        this.callbacks.onSendMultiplayerState({
-          x: player.x,
-          z: player.z,
-          heading: player.heading,
-          speed: player.speed,
-          hp: player.hp,
-          lap: player.lap,
-          totalProgress: player.totalProgress,
-          shieldTimer: player.shieldTimer,
-          nitroTimer: player.nitroTimer,
-          destroyed: player.destroyed,
-        });
-      }
-    }
   }
 
   private executePowerUpEffect(owner: RacerState, type: PowerUpType, rearFired: boolean, fromNetwork: boolean): void {
     if (owner.isPlayer && !fromNetwork) {
       this.audio.playPowerUp(type);
-      if (this.raceConfig?.isMultiplayer && this.callbacks.onSendMultiplayerCombat) {
-        this.callbacks.onSendMultiplayerCombat({
-          type,
-          rearFired,
-          x: owner.x,
-          z: owner.z,
-          heading: owner.heading,
-        });
-      }
     }
 
     const fwdX = Math.sin(owner.heading);
@@ -1962,6 +2321,7 @@ export class RaceEngine {
       rearView,
       this.reducedMotion,
       dt,
+      this.trackScene ? [this.trackScene.group] : undefined,
     );
     this.currentCamPos.copy(this.chaseCamera.currentPos);
     this.currentCamLook.copy(this.chaseCamera.currentLook);
@@ -2218,6 +2578,7 @@ export class RaceEngine {
     window.removeEventListener('pointerup', this.onPointerUpBound);
     this.clearRaceEntities();
     this.garageHeroRig?.dispose();
+    this.vehicleLoader.dispose();
     this.trackScene?.dispose();
     this.textures.dispose();
     this.speedStreakRig.dispose();

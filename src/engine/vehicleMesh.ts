@@ -221,7 +221,14 @@ function buildSculptedGreenhouse(
   cabinH: number,
   archetype: VehicleArchetype,
   isOffroad: boolean,
-): { glassGeo: THREE.BufferGeometry; roofGeo: THREE.BufferGeometry; cabFrontZ: number; cabRearZ: number } {
+): {
+  glassGeo: THREE.BufferGeometry;
+  roofGeo: THREE.BufferGeometry;
+  cabFrontZ: number;
+  cabRearZ: number;
+  aPillarTop: THREE.Vector3;
+  aPillarBottom: THREE.Vector3;
+} {
   const isSupercar = archetype === 'supercar';
   const isMuscle = archetype === 'muscle';
 
@@ -331,7 +338,18 @@ function buildSculptedGreenhouse(
   roofGeo.setIndex(roofIndices);
   roofGeo.computeVertexNormals();
 
-  return { glassGeo, roofGeo, cabFrontZ, cabRearZ };
+  // Exact right-side (+X) A-pillar endpoints extracted directly from the generated greenhouse & roof vertices
+  const topIdx = (roofEndI * 7 + 6) * 3;
+  const aPillarTop = new THREE.Vector3(roofPositions[topIdx] * 0.96, roofPositions[topIdx + 1] - 0.015, roofPositions[topIdx + 2]);
+  const botI = steps - 1;
+  const botIdx = (botI * crossPts + (crossPts - 2)) * 3;
+  const aPillarBottom = new THREE.Vector3(
+    glassPositions[botIdx] * 1.02,
+    Math.max(deckH - 0.02, glassPositions[botIdx + 1]),
+    glassPositions[botIdx + 2],
+  );
+
+  return { glassGeo, roofGeo, cabFrontZ, cabRearZ, aPillarTop, aPillarBottom };
 }
 
 /**
@@ -536,7 +554,7 @@ export function buildVehicleRig(
   }
 
   // 2. Sculpted Curved Greenhouse (Windshield, Side Windows, Rear Fastback Glass) + Crowned Painted Roof
-  const { glassGeo, roofGeo, cabFrontZ, cabRearZ } = buildSculptedGreenhouse(
+  const { glassGeo, roofGeo, cabFrontZ, cabRearZ, aPillarTop, aPillarBottom } = buildSculptedGreenhouse(
     carLength,
     carWidth,
     deckHeight,
@@ -554,18 +572,23 @@ export function buildVehicleRig(
   roofMesh.castShadow = castShadow;
   bodyGroup.add(roofMesh);
 
-  // Structural sculpted A-pillars & B-pillar mullions framing windshield and side windows
-  const pillarGeo = trackGeo(new THREE.CylinderGeometry(0.028, 0.036, cabinHeight * 1.48, 8));
+  // Structural sculpted A-pillars anchored exactly between windshield cowl and roof header corners
+  const pillarVec = new THREE.Vector3().subVectors(aPillarTop, aPillarBottom);
+  const pillarLen = pillarVec.length();
+  const pillarGeo = trackGeo(new THREE.CylinderGeometry(0.024, 0.032, pillarLen, 8));
+  const upAxis = new THREE.Vector3(0, 1, 0);
   for (const sx of [-1, 1]) {
+    const pBot = new THREE.Vector3(sx * aPillarBottom.x, aPillarBottom.y, aPillarBottom.z);
+    const pTop = new THREE.Vector3(sx * aPillarTop.x, aPillarTop.y, aPillarTop.z);
+    const dir = new THREE.Vector3().subVectors(pTop, pBot).normalize();
     const aPillar = new THREE.Mesh(pillarGeo, paintMat);
-    aPillar.position.set(sx * (carWidth * 0.34), deckHeight + cabinHeight * 0.48, cabFrontZ - 0.32);
-    aPillar.rotation.x = isOffroad ? -0.58 : -0.92;
-    aPillar.rotation.z = sx * 0.24;
+    aPillar.position.addVectors(pBot, pTop).multiplyScalar(0.5);
+    aPillar.quaternion.setFromUnitVectors(upAxis, dir);
     bodyGroup.add(aPillar);
 
-    const bPillar = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.03, cabinHeight * 0.85, 0.085)), trimMat);
-    bPillar.position.set(sx * (carWidth * 0.36), deckHeight + cabinHeight * 0.46, (cabFrontZ + cabRearZ) * 0.5 + 0.08);
-    bPillar.rotation.z = sx * 0.26;
+    const bPillar = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.026, cabinHeight * 0.78, 0.08)), trimMat);
+    bPillar.position.set(sx * (carWidth * 0.34), deckHeight + cabinHeight * 0.44, (cabFrontZ + cabRearZ) * 0.5 + 0.06);
+    bPillar.rotation.z = sx * 0.24;
     bodyGroup.add(bPillar);
   }
 
@@ -661,7 +684,7 @@ export function buildVehicleRig(
     bodyGroup.add(vent);
   }
 
-  // 5. Recessed Front Grille, Aero Splitter & Finned Rear Diffuser
+  // 5. Recessed Multi-Slat Front Grille, Side Intakes, Hood/Trunk Shutlines, Splitter & Quad Exhausts
   const splitter = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(carWidth * 0.94, 0.045, 0.42)), carbonMat);
   splitter.position.set(0, rideH + 0.01, halfL - 0.15);
   bodyGroup.add(splitter);
@@ -669,6 +692,26 @@ export function buildVehicleRig(
   const grille = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(carWidth * 0.56, 0.16, 0.12)), trimMat);
   grille.position.set(0, rideH + 0.16, halfL - 0.05);
   bodyGroup.add(grille);
+
+  // Horizontal satin grille slats + flanking lower brake-cooling ducts
+  const slatGeo = trackGeo(new THREE.BoxGeometry(carWidth * 0.52, 0.014, 0.03));
+  for (const sy of [-0.04, 0, 0.04]) {
+    const slat = new THREE.Mesh(slatGeo, chromeMat);
+    slat.position.set(0, rideH + 0.16 + sy, halfL + 0.008);
+    bodyGroup.add(slat);
+  }
+  const intakeGeo = trackGeo(new THREE.BoxGeometry(carWidth * 0.18, 0.11, 0.1));
+  for (const sx of [-1, 1]) {
+    const intake = new THREE.Mesh(intakeGeo, trimMat);
+    intake.position.set(sx * (carWidth * 0.36), rideH + 0.14, halfL - 0.09);
+    intake.rotation.y = sx * -0.22;
+    bodyGroup.add(intake);
+  }
+
+  // Crisp trunk panel shutline seam (flush with rear deck)
+  const trunkSeam = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(carWidth * 0.56, 0.01, 0.014)), trimMat);
+  trunkSeam.position.set(0, deckHeight + 0.005, cabRearZ - 0.16);
+  bodyGroup.add(trunkSeam);
 
   const diffuser = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(carWidth * 0.84, 0.18, 0.26)), carbonMat);
   diffuser.position.set(0, rideH + 0.1, -halfL + 0.08);
@@ -680,22 +723,32 @@ export function buildVehicleRig(
     bodyGroup.add(fin);
   }
 
-  // 6. Flush-Mounted Sculpted Headlamp Clusters (Dark Recessed Bezel + Swept LED DRL Blades)
-  const hlBezelGeo = trackGeo(new THREE.BoxGeometry(0.42, 0.072, 0.24));
-  const hlBladeGeo = trackGeo(new THREE.BoxGeometry(0.38, 0.036, 0.12));
-  const hlY = deckHeight - (isSupercar ? 0.21 : isMuscle ? 0.2 : 0.22);
+  // 6. Flush-Mounted Sculpted Headlamp Clusters (Tucked cleanly inside sloped front fascia bevel)
+  const hlBezelGeo = trackGeo(new THREE.BoxGeometry(0.32, 0.068, 0.18));
+  const hlBladeGeo = trackGeo(new THREE.BoxGeometry(0.27, 0.026, 0.075));
+  const hlProjGeo = trackGeo(new THREE.CylinderGeometry(0.022, 0.022, 0.035, 10));
+  hlProjGeo.rotateX(Math.PI / 2);
+  const hlY = deckHeight - (isSupercar ? 0.27 : isMuscle ? 0.24 : 0.27);
   for (const sx of [-1, 1]) {
     const bezel = new THREE.Mesh(hlBezelGeo, trimMat);
-    bezel.position.set(sx * (carWidth * 0.31), hlY, halfL - 0.22);
-    bezel.rotation.y = sx * -0.28;
-    bezel.rotation.x = 0.22;
+    bezel.position.set(sx * (carWidth * 0.295), hlY, halfL - 0.17);
+    bezel.rotation.y = sx * -0.24;
+    bezel.rotation.x = 0.2;
     bodyGroup.add(bezel);
 
     const blade = new THREE.Mesh(hlBladeGeo, headlightMat);
-    blade.position.set(sx * (carWidth * 0.315), hlY + 0.005, halfL - 0.14);
-    blade.rotation.y = sx * -0.28;
+    blade.position.set(sx * (carWidth * 0.295), hlY + 0.01, halfL - 0.115);
+    blade.rotation.y = sx * -0.24;
     blade.rotation.x = 0.16;
     bodyGroup.add(blade);
+
+    // Dual inner projector lenses recessed inside bezel
+    for (const po of [-0.055, 0.055]) {
+      const proj = new THREE.Mesh(hlProjGeo, headlightMat);
+      proj.position.set(sx * (carWidth * 0.295) + po, hlY - 0.01, halfL - 0.105);
+      proj.rotation.y = sx * -0.2;
+      bodyGroup.add(proj);
+    }
   }
 
   let hlBeamMat: THREE.MeshBasicMaterial | null = null;

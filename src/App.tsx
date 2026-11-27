@@ -131,33 +131,8 @@ export function App() {
     };
     setProfile(updated);
     saveLocalProfile(updated);
-
-    // Report authenticated race summary to server for server-authoritative reward verification
-    const token = authTokenRef.current;
-    if (token) {
-      const apiBase = ((import.meta.env.VITE_API_BASE_URL as string | undefined) || '').replace(/\/$/, '');
-      const transactionId =
-        typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-          ? crypto.randomUUID()
-          : `race_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
-      fetch(`${apiBase}/api/race/complete`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          transactionId,
-          position: finalSnap.position,
-          totalRacers: finalSnap.totalRacers,
-          hitsLanded: playerStanding?.hitsLanded ?? 0,
-          takedowns: playerStanding?.takedowns ?? 0,
-          blocksLanded: 0,
-          difficulty: cfg?.difficulty ?? 'normal',
-          vehicle: getVehicleById(updated.selectedVehicleId).name,
-        }),
-      }).catch(() => {});
-    }
+    // V6.0 Security Gate: Offline races update local progression only.
+    // Competitive online rewards & rankings are awarded exclusively by server-finished authoritative matches.
   }, []);
 
   const launchRace = useCallback(
@@ -223,8 +198,7 @@ export function App() {
             }
           },
           onRaceFinished: handleRaceFinished,
-          onSendMultiplayerState: (st) => mpClientRef.current?.sendRaceState(st),
-          onSendMultiplayerCombat: (ev) => mpClientRef.current?.sendCombatEvent(ev),
+          onSendPlayerInput: (input) => mpClientRef.current?.sendPlayerInput(input) ?? 0,
         },
         settings,
       );
@@ -247,7 +221,7 @@ export function App() {
       launchRace({ mode: 'combat_race', trackId: 'neon_city', difficulty: 'normal', laps: 3 });
     }
 
-    // Initialize WebSocket Multiplayer Client
+    // Initialize Authoritative WebSocket Multiplayer Client
     const mp = new MultiplayerClient({
       onConnectionChange: (conn) => setMpConnected(conn),
       onRoomUpdate: (r) => {
@@ -267,6 +241,7 @@ export function App() {
                 ? pl.customization
                 : getVehicleById(pl.vehicleId).defaultCustomization,
           }));
+        engineRef.current?.setLocalNetworkPlayerId(mp.playerId);
         launchRace(
           {
             mode: startedRoom.mode,
@@ -279,8 +254,40 @@ export function App() {
           remotes,
         );
       },
-      onRemoteState: (patch) => engineRef.current?.applyRemoteRacerUpdate(patch),
-      onRemoteCombat: (ownerId, type, rear) => engineRef.current?.applyRemoteCombatEvent(ownerId, type, rear),
+      onWorldSnapshot: (snapshot) => {
+        engineRef.current?.applyAuthoritativeSnapshot(snapshot);
+      },
+      onMatchFinished: (result) => {
+        engineRef.current?.applyAuthoritativeMatchFinished(result);
+        // Refresh verified server account balances if signed in
+        const token = authTokenRef.current;
+        if (token) {
+          const apiBase = ((import.meta.env.VITE_API_BASE_URL as string | undefined) || '').replace(/\/$/, '');
+          fetch(`${apiBase}/api/auth/me`, {
+            headers: { Authorization: `Bearer ${token}` },
+          })
+            .then((r) => (r.ok ? r.json() : null))
+            .then((data) => {
+              if (data?.user) {
+                setProfile((prev) => {
+                  const synced: PlayerProfile = {
+                    ...prev,
+                    level: data.user.level ?? prev.level,
+                    xp: data.user.xp ?? prev.xp,
+                    credits: data.user.credits ?? prev.credits,
+                    fanPoints: data.user.fanPoints ?? prev.fanPoints,
+                    racesCompleted: data.user.racesCompleted ?? prev.racesCompleted,
+                    wins: data.user.wins ?? prev.wins,
+                    takedowns: data.user.takedowns ?? prev.takedowns,
+                  };
+                  saveLocalProfile(synced);
+                  return synced;
+                });
+              }
+            })
+            .catch(() => {});
+        }
+      },
       onPing: (ms) => {
         setMpPing(ms);
         engineRef.current?.setPing(ms);
@@ -549,7 +556,10 @@ export function App() {
           onStartCareerEvent={handleStartCareerEvent}
           onClaimMission={handleClaimMission}
           onAuthSuccess={(uname, isGuest, serverData, token) => {
-            if (token) authTokenRef.current = token;
+            if (token) {
+              authTokenRef.current = token;
+              mpClientRef.current?.setAuthToken(token);
+            }
             const updated: PlayerProfile = {
               ...profile,
               ...(serverData ?? {}),

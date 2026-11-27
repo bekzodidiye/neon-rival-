@@ -1,32 +1,31 @@
-import type { GameModeId, MultiplayerRoomInfo, PowerUpType, TrackId, VehicleCustomization } from '../game/types';
-import type { RemoteRacerPatch } from '../engine/RaceEngine';
-
-export interface PlayerInputMessage {
-  type: 'input';
-  sequence: number;
-  throttle: number;
-  brake: number;
-  steering: number;
-  drift: boolean;
-  firePowerUp: boolean;
-  rearFire: boolean;
-}
+import type { GameModeId, MultiplayerRoomInfo, TrackId, VehicleCustomization } from '../game/types';
+import type {
+  AuthoritativeMatchResult,
+  AuthoritativeWorldSnapshot,
+  PlayerInputPayload,
+} from '../../shared/protocol/messages';
 
 export interface MultiplayerClientEvents {
   onConnectionChange: (connected: boolean) => void;
   onRoomUpdate: (room: MultiplayerRoomInfo | null) => void;
   onPublicRooms: (rooms: { code: string; trackId: TrackId; mode: GameModeId; playerCount: number; status: string }[]) => void;
-  onRaceStart: (room: MultiplayerRoomInfo) => void;
-  onRemoteState: (patch: RemoteRacerPatch) => void;
-  onRemoteCombat: (ownerId: string, type: PowerUpType, rearFired: boolean) => void;
+  onRaceStart: (room: MultiplayerRoomInfo, matchId: string | null) => void;
+  onWorldSnapshot: (snapshot: AuthoritativeWorldSnapshot) => void;
+  onMatchFinished: (result: AuthoritativeMatchResult, rewardsIssuedCount: number) => void;
   onPing: (ms: number) => void;
   onError: (message: string) => void;
 }
 
+/**
+ * Authoritative WebSocket Multiplayer Client (V6.0 Sections 15, 17, 18).
+ * Streams sequenced PlayerInputPayload commands to the server and receives
+ * server-authoritative world snapshots & verified match results.
+ */
 export class MultiplayerClient {
   private ws: WebSocket | null = null;
   private events: MultiplayerClientEvents;
   public playerId: string | null = null;
+  private authToken: string | null = null;
   private pingInterval = 0;
   private lastPingSent = 0;
   private inputSequence = 0;
@@ -35,8 +34,16 @@ export class MultiplayerClient {
     this.events = events;
   }
 
+  public setAuthToken(token: string | null): void {
+    this.authToken = token;
+    if (token && this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.send({ type: 'auth', token });
+    }
+  }
+
   public connect(): void {
     if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
+      this.send({ type: 'list_rooms' });
       return;
     }
     const configuredUrl = (import.meta.env.VITE_GAME_SERVER_WS_URL as string | undefined)?.trim();
@@ -53,6 +60,9 @@ export class MultiplayerClient {
 
     this.ws.onopen = () => {
       this.events.onConnectionChange(true);
+      if (this.authToken) {
+        this.send({ type: 'auth', token: this.authToken });
+      }
       this.send({ type: 'list_rooms' });
       this.pingInterval = window.setInterval(() => {
         this.lastPingSent = performance.now();
@@ -91,16 +101,18 @@ export class MultiplayerClient {
             this.events.onRoomUpdate(null);
             break;
           case 'race_start':
-            this.events.onRaceStart(msg.room);
+            this.inputSequence = 0;
+            this.events.onRaceStart(msg.room, msg.matchId ?? null);
             break;
-          case 'racer_snapshot':
-            if (msg.racer && msg.racer.id !== this.playerId) {
-              this.events.onRemoteState(msg.racer);
-            }
+          case 'world_snapshot':
+            this.events.onWorldSnapshot(msg as AuthoritativeWorldSnapshot);
             break;
-          case 'combat_event':
-            if (msg.ownerId !== this.playerId) {
-              this.events.onRemoteCombat(msg.ownerId, msg.powerUpType, Boolean(msg.rearFired));
+          case 'match_finished':
+            if (msg.result) {
+              this.events.onMatchFinished(
+                msg.result as AuthoritativeMatchResult,
+                Number(msg.rewardsIssuedCount || 0),
+              );
             }
             break;
           case 'error':
@@ -153,28 +165,19 @@ export class MultiplayerClient {
     this.send({ type: 'leave_room' });
   }
 
-  public sendPlayerInput(input: Omit<PlayerInputMessage, 'type' | 'sequence'>): void {
+  /**
+   * Sends a sequenced PlayerInputPayload to the authoritative server and returns its sequence number
+   * for client-side prediction & reconciliation.
+   */
+  public sendPlayerInput(input: Omit<PlayerInputPayload, 'sequence'>): number {
     this.inputSequence += 1;
+    const seq = this.inputSequence;
     this.send({
       type: 'input',
-      sequence: this.inputSequence,
+      sequence: seq,
       ...input,
     });
-  }
-
-  public sendRaceState(state: Record<string, unknown>): void {
-    this.send({ type: 'racer_state', state });
-  }
-
-  public sendCombatEvent(event: { type: PowerUpType; rearFired: boolean; x: number; z: number; heading: number }): void {
-    this.send({
-      type: 'combat_use',
-      powerUpType: event.type,
-      rearFired: event.rearFired,
-      x: event.x,
-      z: event.z,
-      heading: event.heading,
-    });
+    return seq;
   }
 
   private send(data: unknown): void {

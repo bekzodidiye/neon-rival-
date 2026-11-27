@@ -631,6 +631,99 @@ export function buildTrackScene(
     group.add(chevInst);
   }
 
+  // 6c. Urban Roadside Tree Planters & Cantilevered Traffic Signals (Grounded Environmental Readability)
+  const treeSpots: { x: number; y: number; z: number; yaw: number; scale: number }[] = [];
+  for (let i = 4; i < n; i += 10) {
+    const s = samples[i];
+    if (s.isTunnel || s.y > 1.2) continue;
+    for (const side of [-1, 1]) {
+      const dist = halfW + 4.8;
+      treeSpots.push({
+        x: s.x + s.rx * side * dist,
+        y: s.y,
+        z: s.z + s.rz * side * dist,
+        yaw: Math.atan2(s.tx, s.tz),
+        scale: 0.85 + ((i * 7 + (side > 0 ? 3 : 1)) % 5) * 0.12,
+      });
+    }
+  }
+  if (treeSpots.length > 0) {
+    const planterGeo = trackGeo(new THREE.BoxGeometry(2.1, 0.55, 2.1));
+    planterGeo.translate(0, 0.275, 0);
+    const trunkGeo = trackGeo(new THREE.CylinderGeometry(0.18, 0.26, 3.2, 6));
+    trunkGeo.translate(0, 2.1, 0);
+    const crownGeo = trackGeo(new THREE.IcosahedronGeometry(1.75, 1));
+    crownGeo.translate(0, 4.35, 0);
+
+    const trunkMat = trackMat(new THREE.MeshStandardMaterial({ color: 0x3b2f28, roughness: 0.92 }));
+    const foliageColor = track.def.id === 'industrial_port' ? 0x2c4a38 : 0x1e3a32;
+    const crownMat = trackMat(new THREE.MeshStandardMaterial({ color: foliageColor, roughness: 0.88, metalness: 0.04 }));
+
+    const planterInst = new THREE.InstancedMesh(planterGeo, concreteMat, treeSpots.length);
+    const trunkInst = new THREE.InstancedMesh(trunkGeo, trunkMat, treeSpots.length);
+    const crownInst = new THREE.InstancedMesh(crownGeo, crownMat, treeSpots.length);
+
+    treeSpots.forEach((ts, idx) => {
+      dummy.position.set(ts.x, ts.y, ts.z);
+      dummy.rotation.set(0, ts.yaw, 0);
+      dummy.scale.set(1, 1, 1);
+      dummy.updateMatrix();
+      planterInst.setMatrixAt(idx, dummy.matrix);
+
+      dummy.scale.set(ts.scale, ts.scale, ts.scale);
+      dummy.updateMatrix();
+      trunkInst.setMatrixAt(idx, dummy.matrix);
+
+      dummy.rotation.set(0, ts.yaw + idx * 0.7, 0);
+      dummy.scale.set(ts.scale, ts.scale * 1.15, ts.scale);
+      dummy.updateMatrix();
+      crownInst.setMatrixAt(idx, dummy.matrix);
+    });
+    planterInst.computeBoundingSphere();
+    trunkInst.computeBoundingSphere();
+    crownInst.computeBoundingSphere();
+    group.add(planterInst, trunkInst, crownInst);
+  }
+
+  // Cantilevered Traffic Signal Assemblies at key urban junctions
+  if (track.def.id === 'neon_city') {
+    const sigPoleGeo = trackGeo(new THREE.CylinderGeometry(0.14, 0.18, 7.6, 8));
+    sigPoleGeo.translate(0, 3.8, 0);
+    const sigArmGeo = trackGeo(new THREE.BoxGeometry(7.2, 0.18, 0.18));
+    const sigBoxGeo = trackGeo(new THREE.BoxGeometry(0.45, 1.35, 0.42));
+    const sigLensGeo = trackGeo(new THREE.CircleGeometry(0.14, 10));
+    const sigHousingMat = trackMat(new THREE.MeshStandardMaterial({ color: 0x181f2a, roughness: 0.55, metalness: 0.4 }));
+    const greenLightMat = trackMat(new THREE.MeshBasicMaterial({ color: 0x25f4a0 }));
+    const amberLightMat = trackMat(new THREE.MeshBasicMaterial({ color: 0xfacc15 }));
+
+    for (const frac of [0.12, 0.38, 0.68]) {
+      const s = samples[Math.floor(frac * n) % n];
+      if (s.isTunnel) continue;
+      const sg = new THREE.Group();
+      sg.position.set(s.x, s.y, s.z);
+      sg.rotation.y = Math.atan2(s.tx, s.tz);
+
+      const pole = new THREE.Mesh(sigPoleGeo, poleMat);
+      pole.position.set(halfW + 1.35, 0, 0);
+      sg.add(pole);
+
+      const arm = new THREE.Mesh(sigArmGeo, poleMat);
+      arm.position.set(halfW - 2.1, 7.35, 0);
+      sg.add(arm);
+
+      for (const offset of [halfW - 2.2, halfW - 4.8]) {
+        const box = new THREE.Mesh(sigBoxGeo, sigHousingMat);
+        box.position.set(offset, 6.95, 0);
+        sg.add(box);
+        const lens = new THREE.Mesh(sigLensGeo, frac === 0.38 ? amberLightMat : greenLightMat);
+        lens.position.set(offset, 6.72, -0.23);
+        lens.rotation.y = Math.PI;
+        sg.add(lens);
+      }
+      group.add(sg);
+    }
+  }
+
   // 7. Distinct 3D Holographic Floating Power-Up Emblem Gates
   const pickupMeshes = new Map<string, THREE.Group>();
   const iconPlaneGeo = trackGeo(new THREE.PlaneGeometry(2.45, 2.45));
