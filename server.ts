@@ -45,6 +45,8 @@ export interface AppServerOptions {
   snapshotHz?: number;
   countdownSeconds?: number;
   maxPlayersPerRoom?: number;
+  reconnectGraceMs?: number;
+  compactSnapshotsByDefault?: boolean;
   allowedOrigins?: string[];
 }
 
@@ -131,6 +133,8 @@ export async function createAppServer(options: AppServerOptions = {}): Promise<R
     simHz: options.simHz ?? 60,
     snapshotHz: options.snapshotHz ?? 20,
     countdownSeconds: options.countdownSeconds ?? 2.2,
+    reconnectGraceMs: options.reconnectGraceMs ?? 20_000,
+    compactSnapshotsByDefault: options.compactSnapshotsByDefault ?? false,
   });
 
   const authRateLimiter = new Map<string, { count: number; resetAt: number }>();
@@ -233,6 +237,16 @@ export async function createAppServer(options: AppServerOptions = {}): Promise<R
       roomsActive: stats.roomsActive,
       playersOnline: stats.playersOnline,
       racesRunning: stats.racesRunning,
+    });
+  });
+
+  app.get('/api/ready', (_req, res) => {
+    const stats = roomManager.getStats();
+    res.json({
+      ready: true,
+      persistenceKind: persistence.kind,
+      uptimeSec: Math.round(process.uptime()),
+      roomsActive: stats.roomsActive,
     });
   });
 
@@ -382,9 +396,10 @@ export async function createAppServer(options: AppServerOptions = {}): Promise<R
   });
 
   wss.on('connection', (ws, req) => {
-    const playerId = `net_${crypto.randomBytes(6).toString('hex')}`;
+    let playerId = `net_${crypto.randomBytes(6).toString('hex')}`;
     let authenticatedUserId: string | null = null;
     let authenticatedUsername: string | null = null;
+    let prefersCompactSnapshots = Boolean(options.compactSnapshotsByDefault);
     let msgCountWindow = 0;
     let windowStart = Date.now();
 
@@ -458,6 +473,31 @@ export async function createAppServer(options: AppServerOptions = {}): Promise<R
         return;
       }
 
+      if (msgType === 'set_protocol') {
+        prefersCompactSnapshots = Boolean(msg.compactSnapshots);
+        ws.send(JSON.stringify({ type: 'protocol_ack', compactSnapshots: prefersCompactSnapshots }));
+        return;
+      }
+
+      if (msgType === 'reconnect') {
+        const matchId = typeof msg.matchId === 'string' ? msg.matchId.trim() : '';
+        const reconnectToken = typeof msg.reconnectToken === 'string' ? msg.reconnectToken.trim() : '';
+        const res = roomManager.reconnectPlayer({
+          matchId,
+          reconnectToken,
+          userId: authenticatedUserId,
+          ws,
+          compactSnapshots:
+            msg.compactSnapshots !== undefined ? Boolean(msg.compactSnapshots) : prefersCompactSnapshots,
+        });
+        if (!res.ok) {
+          ws.send(JSON.stringify({ type: 'error', code: 'RECONNECT_FAILED', message: res.error }));
+          return;
+        }
+        playerId = res.playerId;
+        return;
+      }
+
       if (msgType === 'create_room') {
         const check = validateCreateRoomPayload(msg);
         if (!check.ok) {
@@ -472,6 +512,8 @@ export async function createAppServer(options: AppServerOptions = {}): Promise<R
             vehicleId: check.payload.vehicleId,
             customization: (check.payload.customization as Record<string, unknown>) || {},
             ws,
+            compactSnapshots:
+              msg.compactSnapshots !== undefined ? Boolean(msg.compactSnapshots) : prefersCompactSnapshots,
           },
           {
             trackId: check.payload.trackId,
@@ -497,6 +539,8 @@ export async function createAppServer(options: AppServerOptions = {}): Promise<R
             vehicleId: check.payload.vehicleId,
             customization: (check.payload.customization as Record<string, unknown>) || {},
             ws,
+            compactSnapshots:
+              msg.compactSnapshots !== undefined ? Boolean(msg.compactSnapshots) : prefersCompactSnapshots,
           },
           msgType === 'quick_match' ? undefined : check.payload.code,
         );
@@ -507,7 +551,7 @@ export async function createAppServer(options: AppServerOptions = {}): Promise<R
       }
 
       if (msgType === 'leave_room') {
-        roomManager.leaveRoom(playerId);
+        roomManager.leaveRoom(playerId, true);
         ws.send(JSON.stringify({ type: 'room_left' }));
         return;
       }
@@ -555,7 +599,8 @@ export async function createAppServer(options: AppServerOptions = {}): Promise<R
     });
 
     ws.on('close', () => {
-      roomManager.leaveRoom(playerId);
+      // Allow grace-period reconnection during active races
+      roomManager.leaveRoom(playerId, false);
     });
   });
 

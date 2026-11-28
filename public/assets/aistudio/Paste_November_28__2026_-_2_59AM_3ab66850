@@ -1,0 +1,2110 @@
+# NEON RIVALS V7.0
+## PROFESSIONAL GAME QUALITY, REAL 3D ASSETS, COMPLETE CAREER AND PRODUCTION READINESS
+
+Act as a Principal AAA Game Developer, Principal Full-Stack Engineer, Senior 3D Technical Artist, Vehicle Physics Engineer, Level Designer, Multiplayer Architect, Graphics Engineer and QA Lead.
+
+Continue the existing NEON RIVALS project directly inside Google AI Studio.
+
+Repository:
+https://github.com/bekzodidiye/neon-rival-/
+
+Production:
+https://neon-rival-sigma.vercel.app/
+
+Verified V6.0 baseline:
+d04a323cec5a32c4334352fe85616f511fb36d96
+
+Primary gameplay reference:
+Blur (2010), Bizarre Creations.
+
+All previous Master Prompt requirements remain active unless superseded by this document.
+
+Do not create a new project. Do not restart from zero. Do not repeat completed functionality.
+
+The current project is an advanced procedural racing prototype with an authoritative multiplayer foundation. It is not yet a finished professional racing game.
+
+The V7.0 objective is to transform the existing implementation into a visually convincing, enjoyable, content-rich and production-ready Blur-inspired racing game.
+
+---
+
+# PART 1 — VERIFIED V6.0 LIMITATIONS
+
+## 1. EXISTING PROJECT AUDIT
+
+Inspect the current repository before implementing changes.
+
+The following V6.0 features exist:
+
+- Five vehicle configurations.
+- Three racing circuits.
+- Three lighting profiles.
+- Procedural sculpted vehicles.
+- Four-wheel suspension.
+- OBB SAT collisions.
+- Arc-length track sampling.
+- Swept checkpoints.
+- Eight power-up types.
+- Three-slot inventory.
+- Shared RaceSimulation.
+- AuthoritativeRace server.
+- RoomManager.
+- InputQueue.
+- Client prediction.
+- Remote interpolation.
+- Verified reward settlement.
+- JSON development persistence.
+- PostgreSQL schema.
+- GLTFLoader architecture.
+- PWA.
+- 21-test automated suite.
+
+Preserve these systems and run regression tests.
+
+Do not assume existing documentation proves every feature is operational.
+
+## 2. CORRECT THE V6.0 ACCEPTANCE REPORT
+
+The current multiplayer test sends actual WebSocket inputs for approximately 650 milliseconds.
+
+The remaining simulated race is completed through direct server-side inputQueue enqueue operations and AuthoritativeRace.stepOnce().
+
+This is a useful integration test, but it is not a complete real-time WebSocket race.
+
+Do not describe this test as proof of a fully verified production multiplayer experience.
+
+Additionally:
+
+- All five external vehicle asset registry entries have available: false.
+- PostgreSQL schema exists, but the real PostgreSQL adapter is missing.
+- RaceEngine.ts contains approximately 2606 lines.
+- Real hardware GPU performance remains unverified.
+- Twenty-client multiplayer remains untested.
+- Network snapshots are approximately 7.3 KB per update.
+- At 20 Hz, each client receives approximately 146 KB/s before compression.
+
+Use these findings as the starting technical backlog.
+
+---
+
+# PART 2 — PROFESSIONAL VISUAL QUALITY
+
+## 3. PRIMARY VISUAL REFERENCE
+
+Study original Blur gameplay screenshots and footage.
+
+Analyze:
+
+- Vehicle proportions.
+- Camera framing.
+- Car size on screen.
+- Road width.
+- Urban architecture.
+- Natural environment composition.
+- Realistic track materials.
+- Vehicle reflections.
+- Vehicle shadows.
+- Tire behavior.
+- Power-up visual identity.
+- Combat particle effects.
+- HUD composition.
+- Speed perception.
+- Opponent density.
+- Lighting diversity.
+
+Do not create another generic cyberpunk racing template.
+
+Blur combines believable environments and vehicles with exaggerated energy combat.
+
+Use original models, maps, artwork and branding.
+
+Never copy proprietary Blur assets.
+
+## 4. VISUAL QUALITY FREEZE
+
+Stop adding decorative or unrelated features until the visual quality of one complete race is acceptable.
+
+Do not prioritize:
+
+- More menus.
+- New currencies.
+- Battle passes.
+- Shops.
+- Additional procedural recolors.
+- Empty career screens.
+- Fake online features.
+
+Prioritize:
+
+1. Vehicle assets.
+2. Environment assets.
+3. Track design.
+4. Camera.
+5. Driving feel.
+6. Combat effects.
+7. HUD.
+8. Audio.
+
+The player should immediately recognize the application as a credible 3D racing game.
+
+---
+
+# PART 3 — ACTUAL 3D VEHICLE ASSETS
+
+## 5. ASSET PIPELINE COMPLETION
+
+Current file:
+
+src/engine/assets/VehicleAssetLoader.ts
+
+The existing GLB pipeline is implemented, but no production vehicle GLB files are bundled.
+
+Do not spend another iteration merely improving the loader interface.
+
+Use the existing pipeline to load actual vehicle assets.
+
+Search for original, CC0, CC-BY or commercially compatible vehicle models where available.
+
+Verify:
+
+- License.
+- Author.
+- Original source.
+- Download permissions.
+- Commercial usage rights.
+- Modification rights.
+- Attribution requirements.
+
+Accept only legally usable assets.
+
+Do not use extracted assets from commercial games.
+
+If downloading external assets is impossible, explicitly report the limitation.
+
+Do not claim the asset milestone is complete without actual validated models.
+
+## 6. FIRST THREE VEHICLES
+
+Prioritize:
+
+### STREET FALCON
+
+Class D balanced sports coupe.
+
+Required visual character:
+
+- Realistic compact sports-car proportions.
+- Curved bodywork.
+- Detailed grille.
+- Modern headlights.
+- Alloy wheels.
+- Distinct rear lights.
+
+### NIGHT VIPER
+
+Class C muscle car.
+
+Required visual character:
+
+- Long hood.
+- Wide rear bodywork.
+- Aggressive front fascia.
+- Heavy stance.
+- Wide tires.
+- Distinct exhaust system.
+
+### PHANTOM X
+
+Class A supercar.
+
+Required visual character:
+
+- Low and wide silhouette.
+- Mid-engine body proportions.
+- Sculpted aerodynamic surfaces.
+- Detailed air intakes.
+- Aggressive rear diffuser.
+- High-performance wheels.
+
+All three vehicles must have genuinely different geometry.
+
+Do not count recolored models as unique assets.
+
+## 7. REAL GLB ASSET ACCEPTANCE
+
+Required asset location:
+
+public/assets/vehicles/
+
+Every vehicle model must include:
+
+- Body.
+- Wheel_FL.
+- Wheel_FR.
+- Wheel_RL.
+- Wheel_RR.
+- Glass.
+- Headlights.
+- Brake lights.
+
+Equivalent node mappings are acceptable when documented and validated.
+
+Validate:
+
+- Scale.
+- Orientation.
+- Bounding box.
+- Ground clearance.
+- Wheel alignment.
+- Triangle count.
+- Material compatibility.
+- Texture availability.
+- Collision dimensions.
+- Steering pivots.
+- Suspension movement.
+- Visual damage integration.
+
+The same model must be used in the garage and active gameplay.
+
+Test loading, rendering, customization, wheel movement and disposal.
+
+If actual professional assets are unavailable, preserve the existing procedural vehicles as explicitly labeled fallback models.
+
+## 8. VEHICLE MATERIALS
+
+Implement professional automotive materials:
+
+- Metallic paint.
+- Clearcoat.
+- Micro-roughness.
+- Environment reflections.
+- Physically plausible glass.
+- Rubber tires.
+- Metallic wheel rims.
+- Brake discs.
+- Carbon fiber.
+- Dark plastic.
+- Emissive light elements.
+- Normal maps where available.
+
+Do not apply the same material to the entire vehicle.
+
+Headlights and brake lights must have realistic appearance.
+
+Avoid excessively bright underglow and overly reflective body surfaces.
+
+## 9. VEHICLE LOD
+
+Implement actual level-of-detail models.
+
+Suggested levels:
+
+LOD0:
+High-quality near-camera and garage model.
+
+LOD1:
+Simplified close opponent model.
+
+LOD2:
+Lower-detail distant opponent model.
+
+LOD3:
+Minimal distant racing silhouette.
+
+LOD transitions must not create visible popping during normal gameplay.
+
+Preserve visual silhouette across detail levels.
+
+Document actual triangle counts and memory usage.
+
+---
+
+# PART 4 — PROFESSIONAL TRACK DESIGN
+
+## 10. NEON CITY REBUILD
+
+Current files:
+
+src/engine/trackMesh.ts
+
+src/game/trackMath.ts
+
+src/engine/proceduralTextures.ts
+
+src/engine/lighting.ts
+
+The existing circuit has functional geometry and lighting.
+
+The next objective is professional environmental composition.
+
+Create a believable metropolitan racing district rather than buildings randomly distributed beside a spline.
+
+Include:
+
+- Realistic intersections.
+- City blocks.
+- Side streets.
+- Sidewalks.
+- Pedestrian crossings.
+- Roadside parking areas.
+- Commercial buildings.
+- Office buildings.
+- Residential buildings.
+- Gas stations or equivalent original structures.
+- Traffic signals.
+- Traffic signs.
+- Road barriers.
+- Bridges.
+- Tunnel entrances.
+- Tunnel interiors.
+- Overpasses.
+- Streetlights.
+- Advertising structures.
+- Rooftop equipment.
+- Vegetation.
+- Distant skyline.
+
+Buildings must have visual variety and plausible urban placement.
+
+## 11. TRACK DESIGN QUALITY
+
+Preserve valid checkpoints and continuous road geometry.
+
+Improve:
+
+- Starting straight.
+- Corner entry visibility.
+- Corner exit space.
+- Elevation transitions.
+- Fast corners.
+- Technical corners.
+- Hairpins.
+- S-bends.
+- Alternative racing lines.
+- Power-up pickup positioning.
+- Overtaking opportunities.
+
+Do not make every section equally wide and visually identical.
+
+Create memorable landmarks.
+
+Each section should have a recognizable visual identity.
+
+Players should gradually learn the track without relying entirely on the mini-map.
+
+## 12. ROAD MATERIAL QUALITY
+
+Use physically consistent asphalt textures.
+
+Include:
+
+- Fine asphalt grain.
+- Surface wear.
+- Tire rubber marks.
+- Road seams.
+- Lane markings.
+- Edge markings.
+- Turning arrows.
+- Curbs.
+- Drainage details.
+- Wet patches where appropriate.
+- Dry asphalt variation.
+- Roughness variation.
+- Normal mapping.
+
+Avoid unrealistic mirror-like wet roads.
+
+Road materials must preserve clear visibility at high speeds.
+
+## 13. INDUSTRIAL PORT
+
+Upgrade the second track into a detailed industrial racing environment.
+
+Visual features:
+
+- Shipping containers.
+- Warehouses.
+- Cranes.
+- Industrial machinery.
+- Loading areas.
+- Harbor structures.
+- Security fences.
+- Wide service roads.
+- Industrial lighting.
+- Water where appropriate.
+
+Use the existing daytime lighting configuration.
+
+Gameplay features:
+
+- Long acceleration sections.
+- Narrow technical sections.
+- Wide overtaking zones.
+- Container-based visual landmarks.
+- Tactical combat choke points.
+
+## 14. MIDNIGHT STREETS
+
+Upgrade the third track.
+
+Use its sunset lighting configuration or rename its presentation appropriately.
+
+Visual features:
+
+- Dense urban streets.
+- Shops.
+- Residential blocks.
+- Parking structures.
+- Street-level architecture.
+- Warm sunset lighting.
+- Long shadows.
+- Atmospheric sky.
+- Detailed intersections.
+
+The three existing tracks must feel like genuinely different locations.
+
+Do not expand to 32 tracks until the first three meet the visual standard.
+
+---
+
+# PART 5 — LIGHTING AND RENDERING
+
+## 15. PROFESSIONAL LIGHTING
+
+Preserve and improve the existing day, sunset and night profiles.
+
+### Day
+
+- Natural sunlight.
+- Readable shadows.
+- Sky reflections.
+- Realistic environmental colors.
+- Clear road visibility.
+
+### Sunset
+
+- Warm directional light.
+- Long shadows.
+- Atmospheric sky.
+- Balanced vehicle reflections.
+
+### Night
+
+- Warm streetlights.
+- Selective illuminated windows.
+- Visible road geometry.
+- Controlled bloom.
+- Headlights.
+- Brake lights.
+- Bright tactical power-up effects.
+
+Avoid rendering every environment in purple neon.
+
+Do not hide poor assets using darkness.
+
+## 16. GRAPHICS QUALITY SETTINGS
+
+Implement actual quality differences.
+
+LOW:
+
+- Reduced render resolution.
+- Simplified shadows.
+- Limited particles.
+- Lower environment detail.
+- Reduced post-processing.
+
+MEDIUM:
+
+- Balanced lighting.
+- Standard vehicle materials.
+- Moderate shadows.
+- Controlled bloom.
+
+HIGH:
+
+- Detailed materials.
+- Improved shadows.
+- Better reflections.
+- Higher environment detail.
+
+ULTRA:
+
+- Maximum supported quality.
+- Advanced reflection effects where feasible.
+- High-detail vehicles.
+- Increased environmental detail.
+
+Quality settings must affect actual rendering cost.
+
+Do not implement settings as labels only.
+
+---
+
+# PART 6 — DRIVING FEEL
+
+## 17. PHYSICS TELEMETRY REVIEW
+
+V6.0 reported the following measured simulation results:
+
+STREET FALCON:
+0–100 km/h: 4.88 seconds.
+Peak speed: 215 km/h.
+150–5 km/h braking distance: 20.9 meters.
+
+SAND RUNNER:
+0–100 km/h: 4.70 seconds.
+Peak speed: 216 km/h.
+Braking distance: 21.7 meters.
+
+NIGHT VIPER:
+0–100 km/h: 4.05 seconds.
+Peak speed: 243 km/h.
+Braking distance: 21.2 meters.
+
+CYBER GT-R:
+0–100 km/h: 3.40 seconds.
+Peak speed: 272 km/h.
+Braking distance: 19.0 meters.
+
+PHANTOM X:
+0–100 km/h: 2.93 seconds.
+Peak speed: 296 km/h.
+Braking distance: 17.6 meters.
+
+The acceleration and braking are intentionally arcade-oriented.
+
+However, braking distances are extremely short compared with ordinary road-car behavior.
+
+Evaluate whether current tuning produces meaningful corner planning.
+
+Do not arbitrarily increase realism at the expense of arcade accessibility.
+
+Perform controlled playtests and adjust:
+
+- Brake force.
+- Steering response.
+- Yaw damping.
+- Lateral grip.
+- Drift slip.
+- Acceleration.
+- Collision response.
+- Suspension.
+- Recovery.
+
+The player must have meaningful control over racing lines and corner entry speed.
+
+## 18. VEHICLE DIFFERENTIATION
+
+Make each existing vehicle genuinely distinct.
+
+GRIPPY:
+
+- Strong cornering stability.
+- Controlled slip.
+- Precise direction changes.
+
+DRIFTY:
+
+- Higher rear slip.
+- Strong counter-steering potential.
+- Distinct drift response.
+
+BALANCED:
+
+- Predictable steering.
+- Versatile acceleration and braking.
+
+OFF-ROAD:
+
+- Better rough-surface grip.
+- Distinct suspension behavior.
+- Increased stability on uneven surfaces.
+
+Add repeatable comparison tests.
+
+Do not rely on garage rating labels.
+
+## 19. ENGINE AND TRANSMISSION
+
+Implement or improve:
+
+- Simulated RPM.
+- Gear ratios.
+- Automatic gear selection.
+- Gear-dependent torque.
+- Engine braking.
+- Gear-shift audio.
+- Acceleration curves.
+- Turbo or high-RPM sound where appropriate.
+
+Engine sound must respond to throttle, vehicle speed and simulated RPM.
+
+Different vehicle archetypes must have distinguishable sound profiles.
+
+## 20. CAMERA QUALITY
+
+Preserve the V6.0 rear-view correction.
+
+Improve:
+
+- Low-speed camera stability.
+- High-speed camera stability.
+- Corner anticipation.
+- Drift response.
+- Collision avoidance.
+- Nitro FOV.
+- Recovery transition.
+- Camera switching.
+
+Validate the camera against actual scene geometry.
+
+Test:
+
+- Tunnel entry.
+- Tunnel exit.
+- Walls.
+- Hairpins.
+- Overpasses.
+- Large collisions.
+- Wreck.
+- Respawn.
+- Reverse view.
+
+Do not allow the camera to clip through roads or buildings.
+
+---
+
+# PART 7 — COMPLETE BLUR COMBAT EXPERIENCE
+
+## 21. COMBAT SYSTEM CONSOLIDATION
+
+Preserve all eight power-up categories:
+
+- SHUNT.
+- BOLT.
+- BARGE.
+- MINE.
+- SHOCK.
+- SHIELD.
+- NITRO.
+- REPAIR.
+
+The combat system already exists.
+
+Do not create duplicate implementations.
+
+Audit the shared simulation and offline RaceEngine implementation.
+
+Ensure identical gameplay rules in offline and online modes.
+
+One shared source of truth must govern:
+
+- Damage.
+- Power-up ownership.
+- Ammunition.
+- Cooldowns.
+- Projectile collision.
+- Shield capacity.
+- Nitro.
+- Repair.
+- Wreck.
+- Counterplay.
+
+## 22. WORLD-SPACE PICKUPS
+
+Upgrade the visual design of every pickup.
+
+Each power-up must have:
+
+- Original three-dimensional symbol.
+- Distinct silhouette.
+- Recognizable color.
+- Energy glow.
+- Rotation.
+- Collection feedback.
+- Respawn indicator.
+
+Place pickups strategically across the road.
+
+The player should choose between the fastest racing line and useful tactical abilities.
+
+Do not place every pickup in the center of the road.
+
+## 23. SHUNT
+
+Improve homing behavior and impact feedback.
+
+Required:
+
+- Clear projectile core.
+- Directional trail.
+- Targeting feedback.
+- Incoming warning.
+- Avoidable trajectory.
+- Interception.
+- Shield interaction.
+- Physical impact.
+- Distinct audio.
+
+A hit must feel powerful without removing player control for an excessive duration.
+
+## 24. BOLT
+
+Preserve three independent shots per pickup.
+
+Improve:
+
+- Projectile speed readability.
+- Aim feedback.
+- Projectile trails.
+- Collision sparks.
+- Ammunition display.
+- Forward and backward activation.
+- Two-hit Shunt interception.
+
+Do not fire all three rounds automatically.
+
+## 25. BARGE
+
+Implement a dramatic but readable radial shockwave.
+
+Include:
+
+- Expanding energy ring.
+- Ground ripple.
+- Vehicle knockback.
+- Projectile destruction.
+- Mine destruction.
+- Strong audio impact.
+
+The actual interaction radius must match the visual effect.
+
+## 26. MINE
+
+Improve:
+
+- Trap placement.
+- Forward throwing.
+- Rear deployment.
+- Arming animation.
+- Ground visibility.
+- Explosion.
+- Physical disruption.
+- Counterplay.
+
+Mines must be visually recognizable before impact.
+
+## 27. SHOCK
+
+Improve three avoidable electrical hazard domes ahead of the race leader.
+
+Use valid track positions and meaningful gaps.
+
+Include:
+
+- Animated lightning.
+- Ground glow.
+- Clear hazard boundaries.
+- Electrical damage.
+- Temporary slowdown.
+- Shield interaction.
+
+## 28. SHIELD
+
+Create a visually convincing transparent protective barrier.
+
+Include:
+
+- Smooth vehicle-following geometry.
+- Energy surface distortion.
+- Directional impact ripples.
+- Capacity depletion feedback.
+- Expiration animation.
+
+The visual barrier must correspond to actual protection.
+
+## 29. NITRO
+
+Preserve inventory-based Nitro.
+
+Improve:
+
+- Acceleration.
+- Maximum-speed increase.
+- Engine sound.
+- Exhaust effects.
+- Camera FOV.
+- Peripheral speed feedback.
+
+Preserve backward Nitro airbrake behavior.
+
+No free unlimited Nitro in standard Powered Racing.
+
+## 30. REPAIR
+
+Preserve configurable segmented repair.
+
+Improve:
+
+- Restoration particles.
+- Health segment animation.
+- Smoke reduction.
+- Visual damage restoration.
+- Distinct audio feedback.
+
+Do not exceed vehicle maximum health.
+
+---
+
+# PART 8 — DAMAGE AND DESTRUCTION
+
+## 31. VEHICLE DAMAGE VISUALS
+
+Create progressive visible damage.
+
+Stages:
+
+- Healthy.
+- Light damage.
+- Moderate damage.
+- Critical damage.
+- Wrecked.
+
+Visual changes may include:
+
+- Body scratches.
+- Material damage masks.
+- Damaged lights.
+- Sparks.
+- Engine smoke.
+- Body-panel displacement where supported.
+- Wreck particles.
+
+Avoid expensive full mesh destruction if hardware budgets cannot support it.
+
+Damage state must remain connected to authoritative health.
+
+## 32. WRECK AND RECOVERY
+
+Improve the wreck sequence.
+
+Requirements:
+
+- Meaningful impact.
+- Temporary control interruption.
+- Clear destruction feedback.
+- Attacker identification.
+- Valid race penalty.
+- Safe respawn.
+- Temporary spawn protection.
+
+Do not allow respawning to skip race progress.
+
+Preserve race continuity.
+
+---
+
+# PART 9 — ENGINE ARCHITECTURE
+
+## 33. RACENGINE MODULARIZATION
+
+Current RaceEngine.ts contains approximately 2606 lines.
+
+The file has grown rather than becoming a thin orchestration layer.
+
+Refactor incrementally.
+
+Suggested modules:
+
+src/engine/rendering/Renderer.ts
+
+src/engine/rendering/LightingSystem.ts
+
+src/engine/rendering/PostProcessing.ts
+
+src/engine/vehicles/VehicleVisualController.ts
+
+src/engine/tracks/TrackSceneController.ts
+
+src/engine/effects/CombatVFX.ts
+
+src/engine/effects/ParticleSystem.ts
+
+src/engine/audio/AudioManager.ts
+
+src/engine/network/NetworkRaceController.ts
+
+Move independent gameplay logic into shared/simulation modules.
+
+Do not refactor solely to achieve a line-count target.
+
+Each module must have a clear responsibility.
+
+Preserve existing public behavior.
+
+Run regression tests after each extraction.
+
+## 34. SINGLE SIMULATION SOURCE OF TRUTH
+
+The offline renderer and shared authoritative simulation must not implement separate incompatible versions of race gameplay.
+
+Use shared RaceSimulation or a compatible extracted simulation core for:
+
+- Offline races.
+- AI races.
+- Online races.
+- Replay.
+- Automated tests.
+
+Rendering must consume simulation snapshots and events.
+
+Rendering must not independently award pickups or combat damage in authoritative multiplayer.
+
+Create cross-mode parity tests using equivalent seeds, configuration and input sequences.
+
+---
+
+# PART 10 — REAL MULTIPLAYER VERIFICATION
+
+## 35. COMPLETE REAL-TIME WEBSOCKET TEST
+
+Preserve the current fast-step integration tests.
+
+Add a separate full end-to-end network test.
+
+Required:
+
+- Start the actual server.
+- Connect independent WebSocket clients.
+- Authenticate users.
+- Create a room.
+- Join the room.
+- Start a race.
+- Receive authoritative snapshots.
+- Generate driving inputs from received snapshots.
+- Send inputs through WebSocket.
+- Complete the race using the actual scheduled server loop.
+- Receive match_finished.
+- Verify persisted results.
+- Verify rewards.
+
+Do not directly enqueue inputs into the server InputQueue during this test.
+
+Do not directly call stepOnce() to finish the race.
+
+Do not manually set finish flags.
+
+Do not bypass the transport layer.
+
+All player inputs must pass through the actual network protocol.
+
+Test two clients first.
+
+Then four, eight and twenty clients.
+
+## 36. TWENTY-PLAYER GRID
+
+Audit all hardcoded eight-racer assumptions.
+
+Check:
+
+- Starting grid.
+- Track width.
+- Race standings.
+- UI.
+- Mini-map.
+- Snapshot schema.
+- Collision handling.
+- Power-up placement.
+- Room capacity.
+- Finish logic.
+- Reward calculations.
+- Match results.
+- Memory usage.
+
+A room that allows twenty connections is not proof of twenty-player gameplay.
+
+Verify twenty independently simulated network participants.
+
+Keep real browser clients and synthetic load-test clients clearly distinguished.
+
+## 37. NETWORK SNAPSHOT OPTIMIZATION
+
+Current uncompressed snapshots average approximately 7.3 KB at 20 Hz for eight racers.
+
+Improve bandwidth efficiency.
+
+Implement:
+
+- Snapshot version.
+- Server tick.
+- Compact field encoding.
+- Quantized transforms.
+- Delta snapshots.
+- Periodic full snapshots.
+- Event-based combat replication.
+- Removal of unnecessary repeated static metadata.
+- Snapshot sequence validation.
+
+Consider MessagePack or an appropriate binary protocol after comparing actual results.
+
+Do not introduce unnecessary complexity if compact JSON is sufficient.
+
+Measure:
+
+- Bytes per snapshot.
+- Bytes per second per client.
+- Total outbound bandwidth.
+- Encode time.
+- Decode time.
+- CPU usage.
+- Memory usage.
+
+Compare against V6.0.
+
+## 38. LATENCY AND NETWORK CONDITIONS
+
+Add controlled network impairment tests.
+
+Test conditions:
+
+- 40 ms RTT.
+- 80 ms RTT.
+- 150 ms RTT.
+- 200 ms RTT.
+- Variable delay.
+- Temporary interruption.
+- Network jitter.
+- Simulated packet loss and transport recovery.
+
+WebSocket uses reliable ordered transport, so test delayed delivery, retransmission effects and head-of-line blocking realistically.
+
+Validate:
+
+- Input prediction.
+- Reconciliation.
+- Remote interpolation.
+- Event deduplication.
+- Pickup ownership.
+- Combat synchronization.
+- Authoritative finish order.
+
+Do not claim WAN support based solely on loopback testing.
+
+## 39. RECONNECTION
+
+Implement reliable reconnection if incomplete.
+
+Requirements:
+
+- Authenticated session.
+- Match identity.
+- Player identity.
+- Reconnect token.
+- Configurable grace period.
+- Latest authoritative snapshot.
+- Pending input reset or reconciliation.
+- Safe duplicate connection handling.
+
+Do not allow reconnecting to create a second vehicle for the same player.
+
+Test disconnects:
+
+- Before the race.
+- During countdown.
+- During normal driving.
+- During combat.
+- Before finishing.
+
+## 40. MULTI-ROOM STABILITY
+
+Test simultaneous race rooms.
+
+Suggested scenarios:
+
+- Two eight-player rooms.
+- Four eight-player rooms.
+- One twenty-player room.
+- Multiple rooms with mixed bots and network clients.
+
+Measure server tick times and memory.
+
+Verify:
+
+- Room isolation.
+- Correct room cleanup.
+- No cross-room combat.
+- No cross-room rewards.
+- Graceful shutdown.
+
+Do not advertise capacity beyond measured results.
+
+---
+
+# PART 11 — PRODUCTION DATABASE
+
+## 41. IMPLEMENT REAL POSTGRESQL ADAPTER
+
+Existing files:
+
+server/persistence/PersistenceAdapter.ts
+
+server/persistence/schema.sql
+
+The SQL schema and interface exist, but the PostgreSQL implementation is missing.
+
+Create:
+
+server/persistence/PostgresPersistenceAdapter.ts
+
+Use pg or another appropriate PostgreSQL driver.
+
+Implement:
+
+- User creation.
+- User lookup.
+- Account updates.
+- Session persistence.
+- Session revocation.
+- Match persistence.
+- Match participant persistence.
+- Reward ledger.
+- Leaderboard queries.
+- Vehicle ownership.
+- Progression.
+- Transactions.
+- Idempotency.
+
+Adjust asynchronous persistence interfaces and callers where necessary.
+
+Do not block the event loop with synchronous production database operations.
+
+## 42. DATABASE MIGRATIONS
+
+Create versioned migration files.
+
+Include:
+
+- users.
+- sessions.
+- matches.
+- match_participants.
+- reward_ledger.
+- owned_vehicles.
+- player_progress.
+- vehicle_customizations.
+- career_progress.
+
+Add:
+
+- Primary keys.
+- Foreign keys.
+- Unique constraints.
+- Indexes.
+- Check constraints.
+
+Enforce unique match rewards per match_id and user_id.
+
+Create development migration commands.
+
+Do not require a paid managed database merely to implement the adapter.
+
+Use a local or available test database when supported.
+
+If no PostgreSQL runtime is available, implement the adapter and mark integration tests blocked.
+
+## 43. TRANSACTIONAL REWARD SETTLEMENT
+
+Reward settlement must be atomic.
+
+Within one database transaction:
+
+- Persist the authoritative match.
+- Persist participants.
+- Insert the unique reward ledger entry.
+- Update player progression.
+- Update earned balances.
+- Commit.
+
+If the transaction fails, it must roll back.
+
+Repeated settlement requests must not duplicate rewards.
+
+Test:
+
+- Duplicate settlement.
+- Concurrent settlement.
+- Database failure.
+- Server restart.
+- Partial failure.
+- Invalid participant.
+- Invalid match.
+
+Preserve the existing disabled client reward endpoint.
+
+## 44. DATA MIGRATION
+
+Create a controlled migration path from the existing JSON development store.
+
+Preserve valid existing accounts.
+
+Do not migrate fake seed leaderboard entries into production.
+
+Do not duplicate rewards.
+
+Do not silently erase user progression.
+
+Create a dry-run migration option.
+
+Document backup and rollback procedures.
+
+## 45. DEPLOYMENT CONFIGURATION
+
+Retain Vercel for the frontend.
+
+Create a separate deployable Node.js game-server configuration when necessary.
+
+Support:
+
+- DATABASE_URL.
+- SESSION_SECRET.
+- Allowed origins.
+- VITE_GAME_SERVER_WS_URL.
+- VITE_API_BASE_URL.
+
+Verify environment-specific behavior.
+
+Provide:
+
+- Health endpoint.
+- Readiness endpoint.
+- Database connection health.
+- Graceful shutdown.
+- Structured logs.
+- Dockerfile.
+- Development configuration.
+
+Do not provision paid infrastructure without explicit authorization.
+
+---
+
+# PART 12 — COMPLETE CAREER SYSTEM
+
+## 46. CAREER DESIGN
+
+Implement nine original career groups inspired by Blur.
+
+Each group contains:
+
+- Regular race events.
+- Destruction events.
+- Checkpoint events.
+- Reputation objectives.
+- Optional driving challenges.
+- Rival demands.
+- Rival showdown.
+- Vehicle rewards.
+
+Do not simply create nine decorative menu cards.
+
+Every available event must launch its correct gameplay mode.
+
+Initially complete one career group end-to-end.
+
+Then expand through configuration-driven content.
+
+## 47. FIRST CAREER GROUP
+
+Create the first group:
+
+STREET INITIATION.
+
+Suggested events:
+
+Event 1: First Contact.
+Standard powered race.
+
+Event 2: Urban Pursuit.
+Competitive city race.
+
+Event 3: Precision Strike.
+Destruction challenge.
+
+Event 4: Time Pressure.
+Checkpoint challenge.
+
+Event 5: Tactical Defense.
+Combat counterplay objective.
+
+Event 6: Midnight Sprint.
+Advanced powered race.
+
+Rival event: Nova Showdown.
+One-on-one challenge.
+
+Implement all seven events as actual playable gameplay.
+
+## 48. CAREER LIGHTS
+
+Implement permanent career milestones inspired by Blur's Lights.
+
+Award milestones based on valid event results.
+
+Proposed new-game configuration:
+
+- First place: five stars.
+- Second place: four stars.
+- Third place: three stars.
+- Additional stars for eligible reputation and gate challenges.
+
+Store the best event result.
+
+Do not repeatedly grant permanent stars for the same completed objective.
+
+Unlock additional events based on career progression.
+
+## 49. FANS-STYLE REPUTATION
+
+Implement a reputation system independent of finishing position.
+
+Award reputation for:
+
+- Overtakes.
+- Drift.
+- Clean driving.
+- Successful combat.
+- Shield blocks.
+- Projectile interception.
+- Evasion.
+- Wrecking opponents.
+- Optional objectives.
+- Race completion.
+
+Use explicit scoring events.
+
+Do not award arbitrary points without corresponding gameplay.
+
+Display live feedback.
+
+## 50. COMBO SYSTEM
+
+Preserve and improve the existing combo architecture.
+
+Implement:
+
+- Combo timer.
+- Combo multiplier.
+- Valid scoring event sequence.
+- Maximum chain.
+- Combo expiration.
+- Score feedback.
+- Anti-duplication rules.
+
+Make the combo system meaningful without distracting from racing.
+
+## 51. FAN RUN-STYLE EVENTS
+
+Implement optional timed gate challenges during normal races.
+
+Flow:
+
+- Collect challenge trigger.
+- Spawn ordered gates.
+- Begin timer.
+- Pass gates in sequence.
+- Award reputation and eligible career milestone.
+- Continue the normal race.
+
+Challenge gates must remain distinct from mandatory race checkpoints.
+
+Test success and failure.
+
+## 52. FAN DEMAND-STYLE CHALLENGES
+
+Create optional contextual objectives.
+
+Examples:
+
+- Hit two opponents.
+- Intercept an incoming Shunt.
+- Block a projectile.
+- Successfully use a backward attack.
+- Complete a controlled drift.
+- Overtake two vehicles.
+- Avoid Shock hazards.
+
+Provide:
+
+- Objective display.
+- Timer.
+- Progress.
+- Success state.
+- Failure state.
+- Rewards.
+
+Validate actual gameplay events.
+
+## 53. CHECKPOINT MODE
+
+Implement a real time-based checkpoint mode.
+
+Requirements:
+
+- Timed start.
+- Ordered route gates.
+- Time pickups.
+- Nitro pickups where appropriate.
+- Time extension.
+- Finish thresholds.
+- Results.
+- Career rewards.
+
+Do not reuse standard racing mode with only a different title.
+
+## 54. DESTRUCTION MODE
+
+Implement a real timed destruction challenge.
+
+Requirements:
+
+- Target vehicles.
+- Offensive pickups.
+- Damage.
+- Destruction scoring.
+- Combo bonuses.
+- Time limit.
+- Score thresholds.
+- Results.
+
+The objective is combat performance rather than race finishing position.
+
+## 55. RIVAL BATTLES
+
+Create original rival characters.
+
+Each rival requires:
+
+- Original identity.
+- Vehicle.
+- Unique customization.
+- Driving personality.
+- Combat strategy.
+- Unlock demands.
+- Head-to-head event.
+- Completion reward.
+
+Do not use identical AI behavior for all rivals.
+
+Prioritize the first rival battle before creating the remaining eight.
+
+## 56. VEHICLE MASTERY
+
+Implement per-vehicle progression.
+
+Track:
+
+- Races.
+- Wins.
+- Distance.
+- Best lap.
+- Combat actions.
+- Defensive actions.
+- Mastery level.
+
+Unlock cosmetic rewards and balanced upgrades.
+
+Do not make premium rewards competitively dominant.
+
+---
+
+# PART 13 — ONLINE PROGRESSION
+
+## 57. MULTIPLAYER RANK
+
+Implement online rank progression from 1 to 50.
+
+Only authoritative matches may increase verified online rank.
+
+Keep:
+
+- Career reputation.
+- Online rank.
+- Competitive skill rating.
+- Vehicle mastery.
+
+These must remain distinct systems.
+
+Do not allow offline localStorage edits to alter online rank.
+
+## 58. MULTIPLAYER MODS
+
+Implement three equipped passive Mods.
+
+Initial categories:
+
+- Offensive.
+- Defensive.
+- Mobility.
+- Utility.
+
+Possible original Mods:
+
+- Increased pickup radius.
+- Improved Shield capacity.
+- Better Bolt aiming feedback.
+- Reduced recovery penalty.
+- Improved drift stability.
+- Defensive interception bonus.
+
+Every Mod requires:
+
+- Ownership.
+- Unlock condition.
+- Configurable effect.
+- Compatibility rules.
+- Server validation.
+
+Prevent infinite abilities and invulnerability.
+
+## 59. PRESTIGE
+
+Implement ten optional prestige tiers after Rank 50.
+
+Clearly explain:
+
+- Reset progression.
+- Preserved progression.
+- Unlock rewards.
+
+Require player confirmation.
+
+Preserve protected cosmetics.
+
+Do not implement prestige as a non-functional menu label.
+
+---
+
+# PART 14 — GAME PRESENTATION
+
+## 60. MAIN MENU
+
+Create a cinematic racing-game menu.
+
+Use:
+
+- Actual 3D vehicle model.
+- Original game logo.
+- Professional composition.
+- Strong typography.
+- Real environment background.
+- Smooth transitions.
+
+Primary navigation:
+
+QUICK RACE
+
+CAREER
+
+MULTIPLAYER
+
+GARAGE
+
+LEADERBOARD
+
+SETTINGS
+
+Quick Race must lead directly to playable gameplay.
+
+Avoid generic SaaS-style panels.
+
+## 61. GARAGE
+
+Use the same loaded vehicle assets as gameplay.
+
+Implement:
+
+- Real-time model viewing.
+- Orbit camera.
+- Front view.
+- Rear view.
+- Side view.
+- Three-quarter view.
+- Paint customization.
+- Wheel customization.
+- Vehicle statistics.
+- Class.
+- Handling type.
+- Unlock requirements.
+- Mastery.
+
+Do not replace poor gameplay vehicles with unrelated rendered images.
+
+## 62. GAMEPLAY HUD
+
+The HUD must remain compact and professional.
+
+Display:
+
+- Position.
+- Total racers.
+- Lap.
+- Race timer.
+- Mini-map.
+- Speed.
+- Gear.
+- Segmented health.
+- Three power-up slots.
+- Bolt ammunition.
+- Reputation.
+- Combo.
+- Incoming warning.
+- Active challenge.
+
+Avoid obstructing the road.
+
+Mobile controls must adapt the HUD layout.
+
+Use original power-up iconography and clear typography.
+
+## 63. RESULTS SCREEN
+
+Use actual race results.
+
+Display:
+
+- Final position.
+- Finish time.
+- Best lap.
+- Reputation.
+- Combat hits.
+- Wrecks.
+- Defensive actions.
+- Career milestones.
+- Rewards.
+- Unlocks.
+
+Distinguish:
+
+- Offline local progression.
+- Verified online progression.
+
+Do not claim server settlement before persistence succeeds.
+
+---
+
+# PART 15 — AUDIO QUALITY
+
+## 64. ENGINE AUDIO
+
+Improve current procedural synthesis.
+
+Support distinct engine profiles:
+
+- Sports coupe.
+- Muscle car.
+- Supercar.
+- Rally/off-road.
+- GT racing car.
+
+Use:
+
+- RPM.
+- Throttle.
+- Load.
+- Gear.
+- Speed.
+
+Add original or legally licensed sound samples where available.
+
+Avoid repetitive generic oscillator noise.
+
+## 65. ENVIRONMENT AUDIO
+
+Add:
+
+- Wind.
+- Tire noise.
+- Tunnel reverberation.
+- Industrial ambience.
+- City ambience.
+- Road surface variation.
+
+Sound should change with the environment.
+
+## 66. COMBAT AUDIO
+
+Each power-up needs a distinct audio identity.
+
+Incoming attack warnings must remain recognizable during engine noise.
+
+Implement priority-based audio mixing.
+
+Preserve separate volume settings.
+
+Respect browser autoplay restrictions.
+
+---
+
+# PART 16 — MOBILE AND PERFORMANCE
+
+## 67. MOBILE CONTROLS
+
+Preserve simultaneous touch input.
+
+Test:
+
+- Acceleration and steering.
+- Braking and steering.
+- Handbrake and counter-steering.
+- Forward power-up activation.
+- Backward power-up activation.
+- Inventory selection.
+- Orientation changes.
+- Pointer cancellation.
+- Focus loss.
+
+Use safe-area-aware layouts.
+
+Provide:
+
+- Control opacity.
+- Button size.
+- Steering sensitivity.
+- Optional auto acceleration.
+- Left-handed layout.
+
+## 68. HARDWARE PERFORMANCE
+
+Real desktop and mobile GPU performance remains unverified.
+
+Implement a lightweight in-game diagnostics overlay.
+
+Display:
+
+- FPS.
+- Frame time.
+- Draw calls.
+- Triangle count.
+- Physics cost.
+- Renderer resolution.
+- Network latency.
+- Snapshot bandwidth.
+
+Collect measurements from actual supported hardware when available.
+
+Do not report SwiftShader software rendering as representative desktop GPU performance.
+
+Targets:
+
+- Suitable desktop: 60 FPS.
+- Supported mid-range mobile: at least 30 FPS.
+- High-end mobile: approximately 60 FPS where feasible.
+
+## 69. PERFORMANCE OPTIMIZATION
+
+Improve:
+
+- GLB caching.
+- Texture compression.
+- Geometry compression.
+- LOD.
+- Instancing.
+- Draw-call batching.
+- Object pooling.
+- Particle limits.
+- Dynamic resolution.
+- Selective shadows.
+- Render-distance adaptation.
+- Resource disposal.
+
+Do not optimize by removing all visual detail.
+
+Compare equivalent before-and-after scenes.
+
+## 70. PWA
+
+Update asset caching for actual new models, textures and audio.
+
+Support offline training when required assets are cached.
+
+Avoid caching the entire future 52-vehicle catalog by default.
+
+Use versioned assets.
+
+Handle service-worker updates safely.
+
+Do not interrupt active races during application updates.
+
+---
+
+# PART 17 — QUALITY ASSURANCE
+
+## 71. PRESERVE EXISTING TESTS
+
+Run the current 21-test suite.
+
+Do not remove tests to achieve a successful build.
+
+Extend tests for:
+
+- Actual GLB loading.
+- Vehicle asset validation.
+- Asset fallback.
+- Camera.
+- Physics parity.
+- Offline and online simulation parity.
+- Complete career events.
+- Checkpoint mode.
+- Destruction mode.
+- Rival events.
+- Progression.
+- Database adapter.
+- Reward transactions.
+- Reconnection.
+- Full network races.
+
+## 72. VISUAL QA
+
+Capture actual application screenshots:
+
+- Main menu.
+- Garage front view.
+- Garage rear view.
+- Garage side view.
+- Garage three-quarter view.
+- Daytime gameplay.
+- Sunset gameplay.
+- Nighttime gameplay.
+- Shunt impact.
+- Shield.
+- Shock.
+- Nitro.
+- Race results.
+- Mobile HUD.
+
+Screenshots must originate from the running game.
+
+Do not create concept artwork and present it as implemented gameplay.
+
+## 73. MANDATORY ACCEPTANCE GATES
+
+GATE A — PROFESSIONAL VEHICLE ASSETS
+
+PASS only when actual validated vehicle models are bundled and rendered successfully.
+
+GATE B — ENVIRONMENT
+
+PASS only after inspecting the running game and verifying believable geometry, road readability and coherent composition.
+
+GATE C — DRIVING
+
+PASS only after repeatable driving tests and actual gameplay inspection.
+
+GATE D — COMBAT
+
+PASS only when all eight abilities work and meaningful counterplay is verified.
+
+GATE E — FULL REAL-TIME MULTIPLAYER
+
+PASS only when independent WebSocket clients complete races using actual network inputs and the scheduled server loop.
+
+GATE F — DATABASE
+
+PASS only when the PostgreSQL adapter exists and database integration tests actually pass.
+
+GATE G — CAREER
+
+PASS only when career events launch their correct game modes, complete successfully and grant correct progression.
+
+GATE H — PERFORMANCE
+
+PASS only for the hardware and settings actually measured.
+
+GATE I — REGRESSION
+
+PASS only when previous working functionality remains operational.
+
+Use PASS, FAIL, BLOCKED or NOT TESTED.
+
+Do not substitute successful compilation for visual or gameplay acceptance.
+
+---
+
+# PART 18 — DEVELOPMENT ORDER
+
+## 74. V7.0 MILESTONES
+
+Execute in the following order.
+
+MILESTONE 1:
+
+Preserve V6.0 and run regression tests.
+
+MILESTONE 2:
+
+Integrate real vehicle assets where legally available.
+
+MILESTONE 3:
+
+Improve Neon City environment and visual presentation.
+
+MILESTONE 4:
+
+Polish vehicle handling, camera, lighting, audio and combat.
+
+MILESTONE 5:
+
+Unify offline and online simulation architecture.
+
+MILESTONE 6:
+
+Implement real full-duration WebSocket race tests.
+
+MILESTONE 7:
+
+Optimize networking and test twenty clients.
+
+MILESTONE 8:
+
+Implement PostgreSQL persistence adapter and migrations.
+
+MILESTONE 9:
+
+Complete the first career group with all event types.
+
+MILESTONE 10:
+
+Implement remaining career groups, Mods, rank and prestige.
+
+MILESTONE 11:
+
+Perform visual, browser, mobile and performance regression testing.
+
+Do not pretend to complete all milestones in one generation.
+
+Keep a playable verified checkpoint after each milestone.
+
+---
+
+# PART 19 — DOCUMENTATION
+
+## 75. REQUIRED FILES
+
+Update:
+
+PROGRESS.md
+
+docs/KNOWN_ISSUES.md
+
+docs/TEST_REPORT.md
+
+docs/PERFORMANCE_REPORT.md
+
+docs/ASSET_MANIFEST.md
+
+docs/MULTIPLAYER_ARCHITECTURE.md
+
+docs/DATABASE_SCHEMA.md
+
+docs/VEHICLE_ASSET_PIPELINE.md
+
+docs/SECURITY_REPORT.md
+
+docs/DEPLOYMENT.md
+
+Add:
+
+docs/VISUAL_QUALITY_REPORT.md
+
+docs/CAREER_DESIGN.md
+
+docs/NETWORK_BENCHMARK.md
+
+docs/PHYSICS_BALANCING.md
+
+docs/RELEASE_CHECKLIST.md
+
+Documentation must reflect actual implementation.
+
+Do not use documentation as a substitute for code.
+
+---
+
+# PART 20 — FINAL COMMAND
+
+The previous V6.0 iteration made significant engineering improvements.
+
+Do not waste this iteration repeating those improvements.
+
+The largest remaining product-quality problem is the lack of professional visual assets and fully developed gameplay content.
+
+The largest remaining infrastructure problems are:
+
+- Real full-duration network verification.
+- Twenty-player testing.
+- Snapshot bandwidth.
+- Production database adapter.
+- Deployment validation.
+- Hardware performance testing.
+
+Begin with the actual vehicle assets and the visual quality of the running game.
+
+Continue into track design, driving feel, combat, real multiplayer testing and career progression.
+
+If external licensed vehicle assets cannot be obtained, clearly report the blocker and continue feasible improvements without inventing assets.
+
+Do not provision paid infrastructure without authorization.
+
+Do not overwrite working systems unnecessarily.
+
+Do not fabricate screenshots.
+
+Do not fabricate performance metrics.
+
+Do not fabricate database tests.
+
+Do not describe accelerated internal simulation as a complete real-time network test.
+
+Do not create additional low-quality procedural content merely to increase the vehicle or track count.
+
+The final product must remain inspired by Blur's essential gameplay experience:
+
+Believable cars.
+
+High-speed racing.
+
+Meaningful driving skill.
+
+Eight tactical power-ups.
+
+Three-slot inventory.
+
+Defensive counterplay.
+
+Competitive opponents.
+
+Professional racing environments.
+
+Fans-style reputation.
+
+Lights-style progression.
+
+Career challenges.
+
+Rival battles.
+
+Real online competition.
+
+Start actual implementation now.
+
+Preserve the existing repository and working deployment.
+
+Deliver measurable improvements.
+
+QUALITY FIRST.
+
+REAL ASSETS FIRST.
+
+ACTUAL GAMEPLAY FIRST.
+
+NO PLACEHOLDERS PRESENTED AS FINISHED FEATURES.

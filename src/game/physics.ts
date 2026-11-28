@@ -14,6 +14,49 @@ export interface PhysicsStepEvents {
 
 const GRAVITY = 18.5; // Crisp arcade-weighted vertical gravity (m/s^2)
 
+export interface TransmissionTelemetry {
+  gear: number; // 1..6 (0 for reverse)
+  rpmRatio: number; // 0.14..1.0
+  gearTorqueMult: number;
+}
+
+const GEAR_SPEED_THRESHOLDS = [0, 0.19, 0.36, 0.54, 0.72, 0.88, 1.18];
+
+/**
+ * 6-speed automatic transmission & RPM model shared across physics, HUD, and archetype audio synthesis.
+ */
+export function computeTransmissionTelemetry(
+  forwardSpeed: number,
+  maxSpeed: number,
+  throttle: number,
+  nitroActive: boolean,
+): TransmissionTelemetry {
+  if (forwardSpeed < -0.5) {
+    return {
+      gear: 0,
+      rpmRatio: Math.min(0.85, 0.2 + Math.abs(forwardSpeed) / 22),
+      gearTorqueMult: 0.9,
+    };
+  }
+  const norm = Math.max(0, forwardSpeed / Math.max(10, maxSpeed));
+  let gear = 1;
+  for (let g = 1; g <= 6; g++) {
+    if (norm >= GEAR_SPEED_THRESHOLDS[g - 1]) {
+      gear = g;
+    }
+  }
+  const low = GEAR_SPEED_THRESHOLDS[gear - 1];
+  const high = GEAR_SPEED_THRESHOLDS[gear];
+  const span = Math.max(0.08, high - low);
+  const inGear = Math.max(0, Math.min(1, (norm - low) / span));
+  const rpmRatio = Math.min(
+    1,
+    Math.max(0.14, 0.24 + inGear * 0.72 + (throttle > 0.1 ? 0.04 : 0) + (nitroActive ? 0.08 : 0)),
+  );
+  const gearTorqueMult = [1.0, 1.04, 1.02, 1.0, 0.99, 0.98, 0.97][gear] ?? 0.97;
+  return { gear, rpmRatio, gearTorqueMult };
+}
+
 /**
  * Grounded fixed-timestep arcade vehicle simulation (V5.0 Stage 2):
  * - 4-wheel suspension contact & vertical spring-damper integration over track elevation
@@ -193,13 +236,14 @@ export function stepVehiclePhysics(
   const brake = canDrive && !racer.eliminated ? Math.max(0, Math.min(1, input.brake)) : 0;
   const steerInput = canDrive && !racer.eliminated ? Math.max(-1, Math.min(1, input.steer)) : 0;
 
-  // Progressive longitudinal torque curve (realistic weighted 0-100 km/h: ~5.5s Class D -> ~3.2s Class A)
+  // Progressive longitudinal torque curve (gear-coupled arcade response)
+  const trans = computeTransmissionTelemetry(forwardSpeed, maxSpeed, throttle, nitroActive);
   let longAccel = 0;
   if ((throttle > 0 || nitroActive) && wheelsGrounded > 0) {
     const effThrottle = nitroActive ? Math.max(throttle, 0.96) : throttle;
     const speedRatio = Math.max(0, forwardSpeed / Math.max(1, maxSpeed));
     const baseThrustScale = nitroActive ? 0.85 : 0.41;
-    const torqueCurve = Math.max(0.36, 1.06 - speedRatio * 0.68);
+    const torqueCurve = Math.max(0.36, 1.06 - speedRatio * 0.66) * trans.gearTorqueMult;
     const dV = effThrottle * accelPower * baseThrustScale * torqueCurve * tractionScale * dt;
     forwardSpeed += dV;
     longAccel += dV / Math.max(0.001, dt);
@@ -210,10 +254,10 @@ export function stepVehiclePhysics(
     forwardSpeed -= avgSlope * 7.5 * dt;
   }
 
-  // Predictable braking & reverse
+  // Predictable braking & reverse (V7.0 Sec 17: calibrated for meaningful corner-entry planning ~28-36m from 150 km/h)
   if (brake > 0 && wheelsGrounded > 0) {
     if (forwardSpeed > 1.2) {
-      const decel = brake * stats.braking * tractionScale * dt;
+      const decel = brake * stats.braking * 0.68 * tractionScale * dt;
       forwardSpeed = Math.max(0, forwardSpeed - decel);
       longAccel -= decel / Math.max(0.001, dt);
     } else {

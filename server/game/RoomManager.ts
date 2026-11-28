@@ -20,6 +20,19 @@ export interface RoomPlayer {
   ready: boolean;
   isHost: boolean;
   ws: WebSocket;
+  reconnectToken?: string;
+  disconnected?: boolean;
+  compactSnapshots?: boolean;
+}
+
+interface DisconnectedSlot {
+  roomCode: string;
+  matchId: string;
+  playerId: string;
+  userId: string | null;
+  reconnectToken: string;
+  expiresAt: number;
+  timer: NodeJS.Timeout;
 }
 
 export interface RaceRoom {
@@ -41,21 +54,28 @@ export interface RoomManagerOptions {
   simHz?: number;
   snapshotHz?: number;
   countdownSeconds?: number;
+  reconnectGraceMs?: number;
+  compactSnapshotsByDefault?: boolean;
 }
 
 /**
- * Authoritative multiplayer RoomManager (V6.0 Sections 15, 16, 18, 19).
- * Owns lobby lifecycle, authoritative match execution, snapshot fanout,
- * verified match persistence, and graceful cleanup on disconnect/shutdown.
+ * Authoritative multiplayer RoomManager (V7.0 Sections 35–40):
+ * - Supports up to 20 simultaneous players per room across multiple isolated rooms.
+ * - Issues per-player reconnect tokens on match start and preserves disconnected slots
+ *   during the grace period without spawning duplicate vehicles.
+ * - Broadcasts compact quantized/delta snapshots to capable clients (and full snapshots to legacy clients).
  */
 export class RoomManager {
   private readonly rooms = new Map<string, RaceRoom>();
   private readonly playerToRoom = new Map<string, string>();
+  private readonly disconnectedSlots = new Map<string, DisconnectedSlot>(); // key: reconnectToken
   private readonly persistence: PersistenceAdapter;
   private readonly maxPlayersPerRoom: number;
   private readonly simHz: number;
   private readonly snapshotHz: number;
   private readonly countdownSeconds: number;
+  private readonly reconnectGraceMs: number;
+  private readonly compactSnapshotsByDefault: boolean;
 
   constructor(options: RoomManagerOptions) {
     this.persistence = options.persistence;
@@ -63,13 +83,17 @@ export class RoomManager {
     this.simHz = options.simHz ?? 60;
     this.snapshotHz = options.snapshotHz ?? 20;
     this.countdownSeconds = options.countdownSeconds ?? 2.2;
+    this.reconnectGraceMs = options.reconnectGraceMs ?? 20_000;
+    this.compactSnapshotsByDefault = options.compactSnapshotsByDefault ?? false;
   }
 
   public getStats(): { roomsActive: number; playersOnline: number; racesRunning: number } {
     let playersOnline = 0;
     let racesRunning = 0;
     for (const r of this.rooms.values()) {
-      playersOnline += r.players.size;
+      for (const p of r.players.values()) {
+        if (!p.disconnected) playersOnline += 1;
+      }
       if (r.status === 'racing' && r.race) racesRunning += 1;
     }
     return { roomsActive: this.rooms.size, playersOnline, racesRunning };
@@ -106,6 +130,7 @@ export class RoomManager {
         ready: p.ready,
         isHost: p.isHost,
         authenticated: Boolean(p.userId),
+        disconnected: Boolean(p.disconnected),
       })),
     };
   }
@@ -123,7 +148,7 @@ export class RoomManager {
     const raw = JSON.stringify(payload);
     for (const p of room.players.values()) {
       if (excludeId && p.id === excludeId) continue;
-      if (p.ws.readyState === WebSocket.OPEN) {
+      if (!p.disconnected && p.ws.readyState === WebSocket.OPEN) {
         p.ws.send(raw);
       }
     }
@@ -139,7 +164,7 @@ export class RoomManager {
     player: Omit<RoomPlayer, 'ready' | 'isHost'>,
     config: { trackId: TrackId; mode: GameModeId; laps: number; fillWithAi?: boolean },
   ): RaceRoom {
-    this.leaveRoom(player.id);
+    this.leaveRoom(player.id, true);
     const code = this.generateRoomCode();
     const room: RaceRoom = {
       code,
@@ -153,7 +178,12 @@ export class RoomManager {
       race: null,
       lastResult: null,
     };
-    room.players.set(player.id, { ...player, ready: true, isHost: true });
+    room.players.set(player.id, {
+      ...player,
+      ready: true,
+      isHost: true,
+      compactSnapshots: player.compactSnapshots ?? this.compactSnapshotsByDefault,
+    });
     this.rooms.set(code, room);
     this.playerToRoom.set(player.id, code);
     this.broadcastRoom(room, { type: 'room_state', room: this.serializeRoom(room) });
@@ -164,7 +194,7 @@ export class RoomManager {
     player: Omit<RoomPlayer, 'ready' | 'isHost'>,
     codeOrQuickMatch?: string,
   ): { ok: true; room: RaceRoom } | { ok: false; error: string } {
-    this.leaveRoom(player.id);
+    this.leaveRoom(player.id, true);
     let room: RaceRoom | undefined;
     if (!codeOrQuickMatch) {
       room = Array.from(this.rooms.values()).find(
@@ -194,23 +224,71 @@ export class RoomManager {
     const isHost = room.players.size === 0;
     if (isHost) room.hostId = player.id;
 
-    room.players.set(player.id, { ...player, ready: isHost, isHost });
+    room.players.set(player.id, {
+      ...player,
+      ready: isHost,
+      isHost,
+      compactSnapshots: player.compactSnapshots ?? this.compactSnapshotsByDefault,
+    });
     this.playerToRoom.set(player.id, room.code);
     this.broadcastRoom(room, { type: 'room_state', room: this.serializeRoom(room) });
     return { ok: true, room };
   }
 
-  public leaveRoom(playerId: string): void {
+  /**
+   * Handles explicit leave (`forceRemove = true`) vs socket disconnect (`forceRemove = false`).
+   * During an active authoritative race, a disconnect holds the player slot for `reconnectGraceMs`
+   * so they can reconnect without losing progress or spawning a duplicate vehicle.
+   */
+  public leaveRoom(playerId: string, forceRemove = true): void {
     const code = this.playerToRoom.get(playerId);
     if (!code) return;
-    this.playerToRoom.delete(playerId);
-
     const room = this.rooms.get(code);
-    if (!room) return;
+    if (!room) {
+      this.playerToRoom.delete(playerId);
+      return;
+    }
+
+    const player = room.players.get(playerId);
+    if (!forceRemove && room.status === 'racing' && room.race && player && player.reconnectToken) {
+      player.disconnected = true;
+      const token = player.reconnectToken;
+      const existingSlot = this.disconnectedSlots.get(token);
+      if (existingSlot) clearTimeout(existingSlot.timer);
+
+      const timer = setTimeout(() => {
+        this.disconnectedSlots.delete(token);
+        if (player.disconnected) {
+          this.leaveRoom(playerId, true);
+        }
+      }, this.reconnectGraceMs);
+
+      this.disconnectedSlots.set(token, {
+        roomCode: room.code,
+        matchId: room.race.matchId,
+        playerId,
+        userId: player.userId,
+        reconnectToken: token,
+        expiresAt: Date.now() + this.reconnectGraceMs,
+        timer,
+      });
+      this.broadcastRoom(room, { type: 'room_state', room: this.serializeRoom(room) });
+      return;
+    }
+
+    this.playerToRoom.delete(playerId);
+    if (player?.reconnectToken) {
+      const slot = this.disconnectedSlots.get(player.reconnectToken);
+      if (slot) {
+        clearTimeout(slot.timer);
+        this.disconnectedSlots.delete(player.reconnectToken);
+      }
+    }
     room.players.delete(playerId);
     room.race?.inputQueue.removePlayer(playerId);
 
-    if (room.players.size === 0) {
+    const activeHumans = Array.from(room.players.values()).filter((p) => !p.disconnected);
+    if (room.players.size === 0 || (activeHumans.length === 0 && room.status === 'lobby')) {
       room.race?.stop();
       room.race = null;
       this.rooms.delete(code);
@@ -218,13 +296,83 @@ export class RoomManager {
     }
 
     if (room.hostId === playerId) {
-      const nextHost = Array.from(room.players.values())[0];
+      const nextHost = activeHumans[0] ?? Array.from(room.players.values())[0];
       if (nextHost) {
         nextHost.isHost = true;
         room.hostId = nextHost.id;
       }
     }
     this.broadcastRoom(room, { type: 'room_state', room: this.serializeRoom(room) });
+  }
+
+  /**
+   * Rebinds a reconnecting WebSocket to its preserved active race slot (V7.0 Section 39).
+   * Prevents duplicate vehicles and immediately sends the latest authoritative keyframe snapshot.
+   */
+  public reconnectPlayer(params: {
+    matchId: string;
+    reconnectToken: string;
+    userId: string | null;
+    ws: WebSocket;
+    compactSnapshots?: boolean;
+  }): { ok: true; playerId: string; room: RaceRoom; lastSequence: number } | { ok: false; error: string } {
+    const slot = this.disconnectedSlots.get(params.reconnectToken);
+    if (!slot || slot.matchId !== params.matchId) {
+      return { ok: false, error: 'Reconnect token invalid or expired.' };
+    }
+    if (slot.userId && params.userId && slot.userId !== params.userId) {
+      return { ok: false, error: 'Authenticated account does not match original match participant.' };
+    }
+
+    const room = this.rooms.get(slot.roomCode);
+    if (!room || !room.race || room.race.matchId !== params.matchId) {
+      clearTimeout(slot.timer);
+      this.disconnectedSlots.delete(params.reconnectToken);
+      return { ok: false, error: 'Match is no longer active.' };
+    }
+
+    const player = room.players.get(slot.playerId);
+    if (!player) {
+      clearTimeout(slot.timer);
+      this.disconnectedSlots.delete(params.reconnectToken);
+      return { ok: false, error: 'Player slot no longer exists.' };
+    }
+
+    clearTimeout(slot.timer);
+    this.disconnectedSlots.delete(params.reconnectToken);
+
+    // Close any stale socket safely before rebinding
+    if (player.ws !== params.ws && player.ws.readyState === WebSocket.OPEN) {
+      try {
+        player.ws.close(4001, 'Superseded by reconnected session');
+      } catch {
+        // ignore
+      }
+    }
+
+    player.ws = params.ws;
+    player.disconnected = false;
+    if (params.compactSnapshots !== undefined) {
+      player.compactSnapshots = params.compactSnapshots;
+    }
+
+    const lastSequence = room.race.inputQueue.getLastSequence(player.id);
+    const { full, compact } = room.race.buildKeyframeSnapshot();
+    if (player.ws.readyState === WebSocket.OPEN) {
+      player.ws.send(
+        JSON.stringify({
+          type: 'reconnected',
+          playerId: player.id,
+          matchId: room.race.matchId,
+          room: this.serializeRoom(room),
+          lastSequence,
+        }),
+      );
+      player.ws.send(JSON.stringify(player.compactSnapshots ? compact : full));
+    }
+
+    this.broadcastRoom(room, { type: 'room_state', room: this.serializeRoom(room) });
+    return { ok: true, playerId: player.id, room, lastSequence };
   }
 
   public toggleReady(playerId: string): void {
@@ -247,6 +395,8 @@ export class RoomManager {
 
     const participants: SimParticipantConfig[] = [];
     for (const p of room.players.values()) {
+      p.reconnectToken = `rct_${crypto.randomBytes(16).toString('hex')}`;
+      p.disconnected = false;
       participants.push({
         id: p.id,
         userId: p.userId,
@@ -257,11 +407,11 @@ export class RoomManager {
       });
     }
 
-    // Backfill up to 8 grid slots with AI opponents when enabled
-    if (room.fillWithAi && room.mode !== 'time_trial') {
+    // Backfill up to 8 grid slots with AI opponents when enabled (up to 20 humans supported without cap!)
+    if (room.fillWithAi && room.mode !== 'time_trial' && room.mode !== 'checkpoint') {
       const targetGrid = Math.max(participants.length, 8);
       let aiIdx = 0;
-      while (participants.length < targetGrid) {
+      while (participants.length < targetGrid && participants.length < this.maxPlayersPerRoom) {
         const car = VEHICLES[(aiIdx + 1) % VEHICLES.length];
         participants.push({
           id: `ai_${aiIdx + 1}`,
@@ -287,31 +437,68 @@ export class RoomManager {
       snapshotHz: this.snapshotHz,
       countdownSeconds: overrides?.countdownSeconds ?? this.countdownSeconds,
       seed: overrides?.seed,
-      onSnapshot: (snap) => {
-        this.broadcastRoom(room, snap);
+      onSnapshot: (snap, compact) => {
+        let fullJson: string | null = null;
+        let compactJson: string | null = null;
+        for (const p of room.players.values()) {
+          if (p.disconnected || p.ws.readyState !== WebSocket.OPEN) continue;
+          if (p.compactSnapshots && compact) {
+            if (!compactJson) compactJson = JSON.stringify(compact);
+            p.ws.send(compactJson);
+          } else {
+            if (!fullJson) fullJson = JSON.stringify(snap);
+            p.ws.send(fullJson);
+          }
+        }
       },
       onFinished: (result) => {
         room.status = 'finished';
         room.lastResult = result;
         const persistRes = this.persistence.recordVerifiedMatchResult(result);
+        // Clear any pending reconnect slots for this match
+        for (const [tok, slot] of this.disconnectedSlots.entries()) {
+          if (slot.matchId === result.matchId) {
+            clearTimeout(slot.timer);
+            this.disconnectedSlots.delete(tok);
+          }
+        }
         this.broadcastRoom(room, {
           type: 'match_finished',
           result,
           rewardsIssuedCount: persistRes.rewardsIssued.length,
         });
-        // Reset room back to lobby state after broadcasting verified result
+        // Prune disconnected players before returning room to lobby
+        for (const [pid, pl] of Array.from(room.players.entries())) {
+          if (pl.disconnected) {
+            room.players.delete(pid);
+            this.playerToRoom.delete(pid);
+          }
+        }
         room.status = 'lobby';
         room.race = null;
-        this.broadcastRoom(room, { type: 'room_state', room: this.serializeRoom(room) });
+        if (room.players.size === 0) {
+          this.rooms.delete(room.code);
+        } else {
+          this.broadcastRoom(room, { type: 'room_state', room: this.serializeRoom(room) });
+        }
       },
     });
 
-    this.broadcastRoom(room, {
-      type: 'race_start',
-      room: this.serializeRoom(room),
-      matchId: room.race.matchId,
-      authoritative: true,
-    });
+    // Send personalized race_start carrying each player's private reconnectToken
+    const serializedRoom = this.serializeRoom(room);
+    for (const p of room.players.values()) {
+      if (p.ws.readyState === WebSocket.OPEN) {
+        p.ws.send(
+          JSON.stringify({
+            type: 'race_start',
+            room: serializedRoom,
+            matchId: room.race.matchId,
+            reconnectToken: p.reconnectToken,
+            authoritative: true,
+          }),
+        );
+      }
+    }
     room.race.start();
     return { ok: true, matchId: room.race.matchId };
   }
@@ -331,6 +518,10 @@ export class RoomManager {
   }
 
   public shutdown(): void {
+    for (const slot of this.disconnectedSlots.values()) {
+      clearTimeout(slot.timer);
+    }
+    this.disconnectedSlots.clear();
     for (const room of this.rooms.values()) {
       room.race?.stop();
       room.race = null;

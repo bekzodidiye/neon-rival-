@@ -4,31 +4,36 @@ import type {
   AuthoritativeWorldSnapshot,
   PlayerInputPayload,
 } from '../../shared/protocol/messages';
+import { SnapshotDecoder, type CompactWorldSnapshot } from '../../shared/protocol/snapshotCodec';
 
 export interface MultiplayerClientEvents {
   onConnectionChange: (connected: boolean) => void;
   onRoomUpdate: (room: MultiplayerRoomInfo | null) => void;
   onPublicRooms: (rooms: { code: string; trackId: TrackId; mode: GameModeId; playerCount: number; status: string }[]) => void;
   onRaceStart: (room: MultiplayerRoomInfo, matchId: string | null) => void;
-  onWorldSnapshot: (snapshot: AuthoritativeWorldSnapshot) => void;
+  onWorldSnapshot: (snapshot: AuthoritativeWorldSnapshot, rawBytes?: number) => void;
   onMatchFinished: (result: AuthoritativeMatchResult, rewardsIssuedCount: number) => void;
   onPing: (ms: number) => void;
   onError: (message: string) => void;
 }
 
 /**
- * Authoritative WebSocket Multiplayer Client (V6.0 Sections 15, 17, 18).
- * Streams sequenced PlayerInputPayload commands to the server and receives
- * server-authoritative world snapshots & verified match results.
+ * Authoritative WebSocket Multiplayer Client (V7.0 Sections 35–39).
+ * Streams sequenced PlayerInputPayload commands, decodes compact/delta v2 snapshots,
+ * and supports token-authenticated match reconnection without spawning duplicate vehicles.
  */
 export class MultiplayerClient {
   private ws: WebSocket | null = null;
   private events: MultiplayerClientEvents;
   public playerId: string | null = null;
+  public activeMatchId: string | null = null;
+  public reconnectToken: string | null = null;
+  public lastSnapshotBytes = 0;
   private authToken: string | null = null;
   private pingInterval = 0;
   private lastPingSent = 0;
   private inputSequence = 0;
+  private readonly snapshotDecoder = new SnapshotDecoder();
 
   constructor(events: MultiplayerClientEvents) {
     this.events = events;
@@ -63,7 +68,17 @@ export class MultiplayerClient {
       if (this.authToken) {
         this.send({ type: 'auth', token: this.authToken });
       }
-      this.send({ type: 'list_rooms' });
+      this.send({ type: 'set_protocol', compactSnapshots: true });
+      if (this.activeMatchId && this.reconnectToken) {
+        this.send({
+          type: 'reconnect',
+          matchId: this.activeMatchId,
+          reconnectToken: this.reconnectToken,
+          compactSnapshots: true,
+        });
+      } else {
+        this.send({ type: 'list_rooms' });
+      }
       this.pingInterval = window.setInterval(() => {
         this.lastPingSent = performance.now();
         this.send({ type: 'ping' });
@@ -81,7 +96,8 @@ export class MultiplayerClient {
 
     this.ws.onmessage = (ev) => {
       try {
-        const msg = JSON.parse(String(ev.data));
+        const rawStr = String(ev.data);
+        const msg = JSON.parse(rawStr);
         switch (msg.type) {
           case 'welcome':
             this.playerId = msg.playerId;
@@ -98,16 +114,38 @@ export class MultiplayerClient {
             this.events.onRoomUpdate(msg.room);
             break;
           case 'room_left':
+            this.activeMatchId = null;
+            this.reconnectToken = null;
             this.events.onRoomUpdate(null);
             break;
           case 'race_start':
             this.inputSequence = 0;
-            this.events.onRaceStart(msg.room, msg.matchId ?? null);
+            this.snapshotDecoder.reset();
+            this.activeMatchId = msg.matchId ?? null;
+            this.reconnectToken = typeof msg.reconnectToken === 'string' ? msg.reconnectToken : null;
+            this.events.onRaceStart(msg.room, this.activeMatchId);
             break;
+          case 'reconnected':
+            this.playerId = msg.playerId ?? this.playerId;
+            this.inputSequence = Number(msg.lastSequence || 0);
+            this.snapshotDecoder.reset();
+            if (msg.room) this.events.onRoomUpdate(msg.room);
+            break;
+          case 'world_snapshot_compact': {
+            this.lastSnapshotBytes = rawStr.length;
+            const decoded = this.snapshotDecoder.decode(msg as CompactWorldSnapshot);
+            if (decoded) {
+              this.events.onWorldSnapshot(decoded, rawStr.length);
+            }
+            break;
+          }
           case 'world_snapshot':
-            this.events.onWorldSnapshot(msg as AuthoritativeWorldSnapshot);
+            this.lastSnapshotBytes = rawStr.length;
+            this.events.onWorldSnapshot(msg as AuthoritativeWorldSnapshot, rawStr.length);
             break;
           case 'match_finished':
+            this.activeMatchId = null;
+            this.reconnectToken = null;
             if (msg.result) {
               this.events.onMatchFinished(
                 msg.result as AuthoritativeMatchResult,

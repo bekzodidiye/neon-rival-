@@ -8,6 +8,8 @@ import type {
 import { RaceSimulation, type SimParticipantConfig } from '../../shared/simulation/RaceSimulation';
 import { InputQueue } from './InputQueue';
 
+import { SnapshotEncoder, type CompactWorldSnapshot } from '../../shared/protocol/snapshotCodec';
+
 export interface AuthoritativeRaceOptions {
   roomCode: string;
   trackId: TrackId;
@@ -19,7 +21,7 @@ export interface AuthoritativeRaceOptions {
   snapshotHz?: number; // default 20 Hz snapshot publish rate
   countdownSeconds?: number;
   seed?: number;
-  onSnapshot: (snapshot: AuthoritativeWorldSnapshot) => void;
+  onSnapshot: (snapshot: AuthoritativeWorldSnapshot, compact?: CompactWorldSnapshot) => void;
   onFinished: (result: AuthoritativeMatchResult) => void;
 }
 
@@ -28,20 +30,29 @@ export interface ServerTickStats {
   avgTickMs: number;
   maxTickMs: number;
   lastSnapshotBytes: number;
+  lastCompactSnapshotBytes: number;
 }
 
-function computeVerifiedRewards(position: number, hitsLanded: number, takedowns: number, blocksLanded: number): {
+function computeVerifiedRewards(
+  position: number,
+  hitsLanded: number,
+  takedowns: number,
+  blocksLanded: number,
+  totalRacers: number,
+): {
   credits: number;
   xp: number;
   fans: number;
 } {
-  const pos = Math.max(1, Math.min(8, position));
-  const positionTable = [1800, 1300, 950, 700, 520, 400, 320, 260];
-  const baseCredits = positionTable[pos - 1] ?? 260;
+  const gridSize = Math.max(2, Math.min(20, totalRacers));
+  const pos = Math.max(1, Math.min(gridSize, position));
+  const placementRatio = (gridSize - pos) / Math.max(1, gridSize - 1); // 1.0 for 1st, 0.0 for last
+  const podiumBonus = pos === 1 ? 450 : pos === 2 ? 240 : pos === 3 ? 120 : 0;
+  const baseCredits = Math.round(240 + placementRatio * 1110 + podiumBonus);
   return {
     credits: Math.round(baseCredits + hitsLanded * 45 + takedowns * 220 + blocksLanded * 60),
-    xp: Math.round(260 + (9 - pos) * 55 + hitsLanded * 20 + takedowns * 90),
-    fans: Math.round(180 + (9 - pos) * 65 + hitsLanded * 35 + takedowns * 140 + blocksLanded * 50),
+    xp: Math.round(240 + placementRatio * 460 + hitsLanded * 20 + takedowns * 90),
+    fans: Math.round(160 + placementRatio * 540 + hitsLanded * 35 + takedowns * 140 + blocksLanded * 50),
   };
 }
 
@@ -59,8 +70,9 @@ export class AuthoritativeRace {
 
   private readonly simHz: number;
   private readonly snapshotIntervalTicks: number;
-  private readonly onSnapshot: (snapshot: AuthoritativeWorldSnapshot) => void;
+  private readonly onSnapshot: (snapshot: AuthoritativeWorldSnapshot, compact?: CompactWorldSnapshot) => void;
   private readonly onFinished: (result: AuthoritativeMatchResult) => void;
+  private readonly snapshotEncoder = new SnapshotEncoder(20);
 
   private timer: NodeJS.Timeout | null = null;
   private stopped = false;
@@ -70,6 +82,7 @@ export class AuthoritativeRace {
   private totalTickMs = 0;
   private maxTickMs = 0;
   private lastSnapshotBytes = 0;
+  private lastCompactSnapshotBytes = 0;
 
   constructor(options: AuthoritativeRaceOptions) {
     this.matchId = `match_${crypto.randomBytes(8).toString('hex')}`;
@@ -153,10 +166,18 @@ export class AuthoritativeRace {
     }
   }
 
+  public buildKeyframeSnapshot(): { full: AuthoritativeWorldSnapshot; compact: CompactWorldSnapshot } {
+    const full = this.simulation.createSnapshot(Date.now());
+    const compact = this.snapshotEncoder.encode(full, true);
+    return { full, compact };
+  }
+
   private publishSnapshot(): void {
     const snap = this.simulation.createSnapshot(Date.now());
+    const compact = this.snapshotEncoder.encode(snap, false);
     this.lastSnapshotBytes = Buffer.byteLength(JSON.stringify(snap), 'utf8');
-    this.onSnapshot(snap);
+    this.lastCompactSnapshotBytes = Buffer.byteLength(JSON.stringify(compact), 'utf8');
+    this.onSnapshot(snap, compact);
   }
 
   private finalizeMatch(): void {
@@ -164,6 +185,7 @@ export class AuthoritativeRace {
     this.finishedEmitted = true;
     this.stop();
 
+    const totalRacers = this.simulation.racers.length;
     const standings: VerifiedMatchStanding[] = this.simulation.racers
       .slice()
       .sort((a, b) => a.position - b.position)
@@ -171,7 +193,7 @@ export class AuthoritativeRace {
         const userId = this.simulation.participantUserIds.get(r.id) ?? null;
         const verified = Boolean(userId && r.isPlayer);
         const rew = verified
-          ? computeVerifiedRewards(r.position, r.hitsLanded, r.takedowns, r.blocksLanded)
+          ? computeVerifiedRewards(r.position, r.hitsLanded, r.takedowns, r.blocksLanded, totalRacers)
           : { credits: 0, xp: 0, fans: 0 };
 
         return {
@@ -213,6 +235,7 @@ export class AuthoritativeRace {
       avgTickMs: Number((this.totalTickMs / ticks).toFixed(3)),
       maxTickMs: Number(this.maxTickMs.toFixed(3)),
       lastSnapshotBytes: this.lastSnapshotBytes,
+      lastCompactSnapshotBytes: this.lastCompactSnapshotBytes,
     };
   }
 

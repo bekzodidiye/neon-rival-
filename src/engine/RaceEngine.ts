@@ -50,14 +50,25 @@ import {
   resolveNitroAirBrake,
   resolveShockVsShield,
 } from '../game/combatResolver';
-import { resolveCarCollisions, stepVehiclePhysics } from '../game/physics';
+import { computeTransmissionTelemetry, resolveCarCollisions, stepVehiclePhysics } from '../game/physics';
 import { AI_DRIVER_NAMES, computeAiInput } from '../game/ai';
+import {
+  getCareerEventById,
+  MULTIPLAYER_MOD_MAP,
+  type FanDemandRuntime,
+  type FanRunRuntime,
+} from '../game/career';
 import { createProceduralTexturePack, type ProceduralTexturePack } from './proceduralTextures';
-import { applyVehicleCustomization, type VehicleRig } from './vehicleMesh';
+import {
+  applyVehicleCustomization,
+  applyVehicleDamageVisuals,
+  computeVehicleDamageStage,
+  type VehicleRig,
+} from './vehicleMesh';
 import { VehicleAssetLoader } from './assets/VehicleAssetLoader';
 import { createEnvironmentSceneForProfile, getLightingForTrack, type LightingProfile } from './lighting';
 import { buildTrackScene, type BuiltTrackScene } from './trackMesh';
-import { RacingAudioEngine } from './audio';
+import { RacingAudioEngine, resolveEngineProfile } from './audio';
 import { RacingInputHub } from './input';
 import {
   CameraMotionBlurShader,
@@ -218,6 +229,17 @@ export class RaceEngine {
   private currentCamLook = new THREE.Vector3(0, 1, 12);
   private finalLapShown = false;
   private eliminationTimer = 25;
+  private modeTimeRemaining = 0;
+  private destructionScore = 0;
+  private checkpointsCleared = 0;
+  private nextTimedGateT = 0.14;
+  private fanRun: FanRunRuntime | null = null;
+  private fanDemand: FanDemandRuntime | null = null;
+  private playerPrevPosition = 1;
+  private playerDistanceMeters = 0;
+  private lastHudGear = 1;
+  private fanRunGateMesh: THREE.Group | null = null;
+  private checkpointGateMesh: THREE.Group | null = null;
   private combatFeed: CombatFeedItem[] = [];
   private hudEmitAccum = 0;
   private pingMs = 0;
@@ -397,28 +419,32 @@ export class RaceEngine {
     // Sleek dark reflective circular turntable + neon halo ring right on Neon City start grid
     const baseGeo = new THREE.CylinderGeometry(4.6, 5.0, 0.22, 40);
     const baseMat = new THREE.MeshStandardMaterial({
-      color: 0x0c1222,
-      roughness: 0.14,
-      metalness: 0.82,
+      color: 0x162033,
+      roughness: 0.34,
+      metalness: 0.52,
     });
     const base = new THREE.Mesh(baseGeo, baseMat);
     base.position.set(0, -0.05, 0);
     base.receiveShadow = true;
     this.garageGroup.add(base);
 
-    const haloGeo = new THREE.TorusGeometry(4.65, 0.06, 8, 48);
+    const haloGeo = new THREE.TorusGeometry(4.65, 0.05, 8, 48);
     haloGeo.rotateX(Math.PI / 2);
     const haloMat = new THREE.MeshBasicMaterial({ color: 0x00c8ff });
     const halo = new THREE.Mesh(haloGeo, haloMat);
     halo.position.set(0, 0.08, 0);
     this.garageGroup.add(halo);
 
-    // Subtle localized showcase key & cool rim lights inside garageGroup (active only in Title/Garage)
-    const stageKey = new THREE.PointLight(0xdcebff, 28, 18, 1.6);
-    stageKey.position.set(4.8, 3.8, 4.6);
+    // Subtle localized showcase key, front fill & cool rim lights inside garageGroup (active only in Title/Garage)
+    const stageKey = new THREE.PointLight(0xdcebff, 34, 20, 1.5);
+    stageKey.position.set(4.8, 4.0, 4.8);
     this.garageGroup.add(stageKey);
 
-    const stageRim = new THREE.PointLight(0x38bdf8, 18, 16, 1.7);
+    const stageFill = new THREE.PointLight(0xfff1dc, 22, 16, 1.6);
+    stageFill.position.set(-2.5, 2.4, 5.2);
+    this.garageGroup.add(stageFill);
+
+    const stageRim = new THREE.PointLight(0x38bdf8, 22, 18, 1.6);
     stageRim.position.set(-5.2, 2.8, -4.4);
     this.garageGroup.add(stageRim);
 
@@ -618,8 +644,15 @@ export class RaceEngine {
       customization: VehicleCustomization;
     }[] = [];
 
-    // Place human player at front-middle row (slot 0 in Time Trial, slot 3 or last in full grid for exciting overtakes)
-    const aiTotal = config.mode === 'time_trial' ? 0 : config.isMultiplayer ? Math.max(0, 4 - remotePlayers.length) : config.aiCount;
+    // Place human player at front-middle row (slot 0 in Time Trial/Checkpoint, 1v1 in Rival Showdown, full grid otherwise)
+    const aiTotal =
+      config.mode === 'time_trial' || config.mode === 'checkpoint'
+        ? 0
+        : config.isRivalShowdown
+          ? 1
+          : config.isMultiplayer
+            ? Math.max(0, 4 - remotePlayers.length)
+            : config.aiCount;
 
     // Add remote multiplayer opponents first
     for (const rp of remotePlayers) {
@@ -633,8 +666,23 @@ export class RaceEngine {
       });
     }
 
-    // Add AI rivals
+    // Add AI rivals (or Career Boss Rival for 1v1 Rival Showdown)
     for (let i = 0; i < aiTotal; i++) {
+      if (config.isRivalShowdown && i === 0 && config.rivalVehicleId) {
+        const bossCfg = getVehicleById(config.rivalVehicleId);
+        racerEntries.push({
+          id: 'ai_rival_boss',
+          name: config.rivalName || 'RIVAL BOSS',
+          isPlayer: false,
+          isRemote: false,
+          vehicleId: bossCfg.id,
+          customization: {
+            ...bossCfg.defaultCustomization,
+            ...(config.rivalCustomization ?? {}),
+          },
+        });
+        continue;
+      }
       const carCfg = VEHICLES[i % VEHICLES.length];
       const paint = PAINT_PRESETS[(i + 2) % PAINT_PRESETS.length].hex;
       racerEntries.push({
@@ -766,6 +814,12 @@ export class RaceEngine {
       this.camera.lookAt(this.currentCamLook);
     }
 
+    // Configure archetype-specific procedural engine audio profile
+    const playerCarDef = getVehicleById(config.vehicleId);
+    this.audio.setEngineProfile(
+      resolveEngineProfile(playerCarDef.archetype, playerCarDef.handlingArchetype),
+    );
+
     this.pendingInputs = [];
     this.remoteBuffers.clear();
     this.lastAppliedEventSeq = 0;
@@ -778,9 +832,100 @@ export class RaceEngine {
     this.chaseCamera.trauma = 0;
     this.finalLapShown = false;
     this.eliminationTimer = 25;
+    this.modeTimeRemaining =
+      config.mode === 'destruction_arena'
+        ? config.timeLimitSec ?? 90
+        : config.mode === 'checkpoint'
+          ? config.timeLimitSec ?? 28
+          : 0;
+    this.destructionScore = 0;
+    this.checkpointsCleared = 0;
+    this.nextTimedGateT = 0.14;
+    this.playerPrevPosition = player?.position ?? 1;
+    this.playerDistanceMeters = 0;
+    this.lastHudGear = 1;
+
+    // Initialize optional Fan Run (5 glowing sequential gates mid-Lap 1 on Combat/Career races)
+    const enableFanRun = !config.isMultiplayer && config.mode === 'combat_race';
+    this.fanRun = enableFanRun
+      ? {
+          active: false,
+          triggered: false,
+          completed: false,
+          failed: false,
+          gatesTotal: 5,
+          gatesCleared: 0,
+          remainingSec: 18,
+          nextGateTrackT: 0.28,
+          nextGateLateral: -2.4,
+        }
+      : null;
+
+    // Initialize Career Event Fan Demand challenge if configured
+    const careerEv = config.careerEventId ? getCareerEventById(config.careerEventId) : undefined;
+    this.fanDemand =
+      careerEv?.fanDemand && !config.isMultiplayer
+        ? {
+            id: careerEv.fanDemand.id,
+            type: careerEv.fanDemand.type,
+            label: careerEv.fanDemand.label,
+            target: careerEv.fanDemand.target,
+            progress: 0,
+            remainingSec: careerEv.fanDemand.timeLimitSec,
+            status: 'active',
+            rewardFans: careerEv.fanDemand.rewardFans,
+          }
+        : null;
+
+    this.setupDynamicModeGates();
     this.combatFeed = [];
     this.setMode('playing');
     this.emitHudSnapshot();
+  }
+
+  private setupDynamicModeGates(): void {
+    if (this.fanRunGateMesh) {
+      this.combatGroup.remove(this.fanRunGateMesh);
+      this.fanRunGateMesh = null;
+    }
+    if (this.checkpointGateMesh) {
+      this.combatGroup.remove(this.checkpointGateMesh);
+      this.checkpointGateMesh = null;
+    }
+
+    if (this.fanRun) {
+      const g = new THREE.Group();
+      const ringGeo = new THREE.TorusGeometry(2.6, 0.14, 10, 28);
+      const ringMat = new THREE.MeshBasicMaterial({ color: 0xff2a85 });
+      const ring = new THREE.Mesh(ringGeo, ringMat);
+      ring.position.y = 2.4;
+      g.add(ring);
+      g.visible = false;
+      this.combatGroup.add(g);
+      this.fanRunGateMesh = g;
+    }
+
+    if (this.raceConfig?.mode === 'checkpoint') {
+      const g = new THREE.Group();
+      const postGeo = new THREE.BoxGeometry(0.45, 5.2, 0.45);
+      const postMat = new THREE.MeshBasicMaterial({ color: 0x00f5d4 });
+      const left = new THREE.Mesh(postGeo, postMat);
+      left.position.set(-5.8, 2.6, 0);
+      const right = new THREE.Mesh(postGeo, postMat);
+      right.position.set(5.8, 2.6, 0);
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(12.2, 0.45, 0.45), postMat);
+      bar.position.set(0, 5.1, 0);
+      g.add(left, right, bar);
+      this.positionGateOnTrack(g, this.nextTimedGateT, 0);
+      this.combatGroup.add(g);
+      this.checkpointGateMesh = g;
+    }
+  }
+
+  private positionGateOnTrack(gate: THREE.Group, trackT: number, lateral: number): void {
+    const s = sampleTrackAt(this.currentTrack, normalizeT(trackT));
+    gate.position.set(s.x + s.rx * lateral, s.y, s.z + s.rz * lateral);
+    gate.rotation.y = Math.atan2(s.tx, s.tz);
   }
 
   public setLocalNetworkPlayerId(playerId: string | null): void {
@@ -1165,6 +1310,14 @@ export class RaceEngine {
     for (const m of this.bargeMeshes.values()) this.combatGroup.remove(m);
     this.bargeMeshes.clear();
     this.bargeWaves = [];
+    if (this.fanRunGateMesh) {
+      this.combatGroup.remove(this.fanRunGateMesh);
+      this.fanRunGateMesh = null;
+    }
+    if (this.checkpointGateMesh) {
+      this.combatGroup.remove(this.checkpointGateMesh);
+      this.checkpointGateMesh = null;
+    }
   }
 
   private scheduleNextTick(): void {
@@ -1307,11 +1460,11 @@ export class RaceEngine {
     this.currentCamPos.y += (desiredY - this.currentCamPos.y) * damp;
     this.currentCamPos.z += (desiredZ - this.currentCamPos.z) * damp;
 
-    // Shift look target toward car's right so the car frames cleanly in the right two-thirds
+    // Shift look target toward camera-left so the hero car frames cleanly in the unobstructed right 60%
     this.camera.position.copy(this.currentCamPos);
     this.camera.fov = 52;
     this.camera.updateProjectionMatrix();
-    this.camera.lookAt(anchor.x + 1.55, anchor.y + 0.85, anchor.z);
+    this.camera.lookAt(anchor.x - 1.65, anchor.y + 0.85, anchor.z + 0.85);
 
     if (this.garageHeroRig) {
       this.garageHeroRig.root.rotation.y = Math.sin(this.elapsedClock * 0.35) * 0.12;
@@ -1417,6 +1570,14 @@ export class RaceEngine {
         }
       }
 
+      // Destruction Arena & Checkpoint timed modes (single-player)
+      if (canDrive && !this.raceConfig?.isMultiplayer && (this.raceConfig?.mode === 'destruction_arena' || this.raceConfig?.mode === 'checkpoint')) {
+        this.modeTimeRemaining = Math.max(0, this.modeTimeRemaining - simDt);
+        if (this.modeTimeRemaining <= 0) {
+          this.finishRaceNow();
+        }
+      }
+
       // Step all racers
       const isAuthMp = Boolean(this.raceConfig?.isMultiplayer);
       const nowPerf = performance.now();
@@ -1484,9 +1645,23 @@ export class RaceEngine {
           if (stepIdx === subSteps - 1) {
             const carTop = getVehicleById(racer.vehicleId).stats.topSpeed;
             const speedRatio = Math.min(1.3, Math.abs(racer.speed) / carTop);
-            const gearFloat = speedRatio * 5.8;
-            const rpmRatio = Math.max(0.15, Math.min(1, gearFloat - Math.floor(gearFloat) + 0.22));
-            this.audio.updateEngine(speedRatio, rpmRatio, physEvents.driftIntensity, physEvents.nitroActive);
+            const trans = computeTransmissionTelemetry(
+              racer.speed,
+              carTop,
+              stepControl.throttle,
+              physEvents.nitroActive,
+            );
+            const inTunnel = this.currentTrack.def.tunnelRanges.some(
+              ([a, b]) => racer.trackT >= a && racer.trackT <= b,
+            );
+            this.audio.updateEngine(
+              speedRatio,
+              trans.rpmRatio,
+              physEvents.driftIntensity,
+              physEvents.nitroActive,
+              trans.gear,
+              inTunnel,
+            );
           }
           continue;
         }
@@ -1570,25 +1745,66 @@ export class RaceEngine {
           this.spawnParticle(racer.x, racer.y + 0.9, racer.z, (Math.random() - 0.5) * 2, 3.2, (Math.random() - 0.5) * 2, 0.6, 0.5, 0x3b4252);
         }
 
-        // Update checkpoints & lap completion
+        // Update checkpoints & lap completion + Checkpoint mode / Fan Run / Fan Demand progress
         if (canDrive) {
+          if (racer.isPlayer) {
+            this.playerDistanceMeters += Math.abs(racer.speed) * simDt;
+            // Checkpoint mode sequential timed gate check
+            if (this.raceConfig?.mode === 'checkpoint') {
+              const gateDist = forwardTrackDistance(this.currentTrack, racer.trackT, this.nextTimedGateT);
+              if (gateDist < 12 || gateDist > this.currentTrack.totalLength - 12) {
+                this.checkpointsCleared += 1;
+                this.modeTimeRemaining = Math.min(60, this.modeTimeRemaining + 6.5);
+                this.nextTimedGateT = normalizeT(this.nextTimedGateT + 0.14);
+                if (this.checkpointGateMesh) {
+                  this.positionGateOnTrack(this.checkpointGateMesh, this.nextTimedGateT, 0);
+                }
+                this.audio.playPickup();
+                this.awardFans(racer, 100, `GATE ${this.checkpointsCleared} (+6.5s)`, '#00F5D4');
+              }
+            }
+            // Optional Fan Run holographic ring chain
+            this.updateFanRunForPlayer(racer, simDt);
+            // Active Fan Demand challenge (drift duration & overtakes)
+            this.updateFanDemandForPlayer(racer, simDt);
+          }
+
           const cpRes = updateRacerCheckpoints(racer, this.currentTrack, racer.trackT, totalLaps, this.raceTime);
           if (racer.isPlayer && cpRes.lapCompleted && !cpRes.raceFinished && racer.lap === totalLaps) {
             this.finalLapShown = true;
             this.pushFeed('FINAL LAP!', '#00C8FF');
           }
-          if (racer.isPlayer && cpRes.raceFinished) {
+          if (
+            racer.isPlayer &&
+            cpRes.raceFinished &&
+            this.raceConfig?.mode !== 'destruction_arena' &&
+            this.raceConfig?.mode !== 'checkpoint'
+          ) {
             this.finishRaceNow();
           }
         }
 
-        // Update engine audio from player racer on final substep
+        // Update archetype engine audio with 6-speed transmission, tunnel reverb filter, and incoming warning
         if (racer.isPlayer && stepIdx === subSteps - 1) {
           const carTop = getVehicleById(racer.vehicleId).stats.topSpeed;
           const speedRatio = Math.min(1.3, Math.abs(racer.speed) / carTop);
-          const gearFloat = speedRatio * 5.8;
-          const rpmRatio = Math.max(0.15, Math.min(1, gearFloat - Math.floor(gearFloat) + 0.22));
-          this.audio.updateEngine(speedRatio, rpmRatio, physEvents.driftIntensity, physEvents.nitroActive);
+          const trans = computeTransmissionTelemetry(
+            racer.speed,
+            carTop,
+            racerInput.throttle,
+            physEvents.nitroActive,
+          );
+          const inTunnel = this.currentTrack.def.tunnelRanges.some(
+            ([a, b]) => racer.trackT >= a && racer.trackT <= b,
+          );
+          this.audio.updateEngine(
+            speedRatio,
+            trans.rpmRatio,
+            physEvents.driftIntensity,
+            physEvents.nitroActive,
+            trans.gear,
+            inTunnel,
+          );
         }
       }
 
@@ -1667,7 +1883,11 @@ export class RaceEngine {
       }
       case 'SHIELD': {
         owner.shieldTimer = POWERUP_BALANCE.SHIELD_DURATION;
-        owner.shieldHp = POWERUP_BALANCE.SHIELD_CAPACITY;
+        const modBonus =
+          owner.isPlayer && this.raceConfig?.equippedMods?.includes('mod_aegis_capacitor')
+            ? MULTIPLAYER_MOD_MAP['mod_aegis_capacitor']?.effects.shieldCapacityBonus ?? 0
+            : 0;
+        owner.shieldHp = POWERUP_BALANCE.SHIELD_CAPACITY + modBonus;
         if (owner.isPlayer) this.pushFeed('SHIELD DEFLECTOR ONLINE', '#00D8FF');
         break;
       }
@@ -1944,6 +2164,86 @@ export class RaceEngine {
     }
   }
 
+  private updateFanRunForPlayer(player: RacerState, dt: number): void {
+    const fr = this.fanRun;
+    if (!fr || fr.completed || fr.failed) return;
+
+    if (!fr.triggered) {
+      if (player.trackT >= 0.22 && player.trackT <= 0.35) {
+        fr.triggered = true;
+        fr.active = true;
+        fr.nextGateTrackT = normalizeT(player.trackT + 0.045);
+        fr.nextGateLateral = -2.2;
+        if (this.fanRunGateMesh) {
+          this.fanRunGateMesh.visible = true;
+          this.positionGateOnTrack(this.fanRunGateMesh, fr.nextGateTrackT, fr.nextGateLateral);
+        }
+        this.pushFeed('FAN RUN ACTIVE — CLEAR 5 GATES!', '#FF2A85');
+      }
+      return;
+    }
+
+    if (!fr.active) return;
+    fr.remainingSec = Math.max(0, fr.remainingSec - dt);
+    if (fr.remainingSec <= 0) {
+      fr.active = false;
+      fr.failed = true;
+      if (this.fanRunGateMesh) this.fanRunGateMesh.visible = false;
+      this.pushFeed('FAN RUN EXPIRED', '#94A3B8');
+      return;
+    }
+
+    if (this.fanRunGateMesh) {
+      const dx = player.x - this.fanRunGateMesh.position.x;
+      const dz = player.z - this.fanRunGateMesh.position.z;
+      if (dx * dx + dz * dz < 16.5) {
+        fr.gatesCleared += 1;
+        this.audio.playPickup();
+        if (fr.gatesCleared >= fr.gatesTotal) {
+          fr.active = false;
+          fr.completed = true;
+          this.fanRunGateMesh.visible = false;
+          this.awardFans(player, 400, 'FAN RUN COMPLETE!', '#FF2A85');
+        } else {
+          fr.nextGateTrackT = normalizeT(fr.nextGateTrackT + 0.045);
+          fr.nextGateLateral = fr.gatesCleared % 2 === 0 ? -2.4 : 2.4;
+          this.positionGateOnTrack(this.fanRunGateMesh, fr.nextGateTrackT, fr.nextGateLateral);
+          this.awardFans(player, 65, `FAN GATE ${fr.gatesCleared}/${fr.gatesTotal}`, '#FF2A85');
+        }
+      }
+    }
+  }
+
+  private updateFanDemandForPlayer(player: RacerState, dt: number): void {
+    const fd = this.fanDemand;
+    if (!fd || fd.status !== 'active') return;
+    fd.remainingSec = Math.max(0, fd.remainingSec - dt);
+    if (fd.type === 'drift_duration' && player.isDrifting) {
+      fd.progress = Math.min(fd.target, fd.progress + dt);
+    } else if (fd.type === 'overtake_rivals' && player.position < this.playerPrevPosition) {
+      fd.progress = Math.min(fd.target, fd.progress + (this.playerPrevPosition - player.position));
+    }
+    this.playerPrevPosition = player.position;
+
+    if (fd.progress >= fd.target) {
+      fd.status = 'succeeded';
+      this.awardFans(player, fd.rewardFans, `FAN DEMAND CLEARED!`, '#FF2A85');
+    } else if (fd.remainingSec <= 0) {
+      fd.status = 'failed';
+      this.pushFeed('FAN DEMAND MISSED', '#94A3B8');
+    }
+  }
+
+  private recordFanDemandCombat(type: 'hit_opponents' | 'block_or_intercept' | 'rear_fire_hit', player: RacerState): void {
+    const fd = this.fanDemand;
+    if (!fd || fd.status !== 'active' || fd.type !== type) return;
+    fd.progress = Math.min(fd.target, fd.progress + 1);
+    if (fd.progress >= fd.target) {
+      fd.status = 'succeeded';
+      this.awardFans(player, fd.rewardFans, 'FAN DEMAND CLEARED!', '#FF2A85');
+    }
+  }
+
   private onCombatHit(
     attacker: RacerState | undefined,
     target: RacerState,
@@ -1955,7 +2255,9 @@ export class RaceEngine {
       this.spawnBurst(target.x, target.y + 1.0, target.z, 16, 0x00d8ff, 14);
       if (target.isPlayer) {
         this.audio.playShieldBlock();
-        this.awardFans(target, 200, `SHIELD DEFLECTED ${weapon} +200 FANS`, '#00D8FF');
+        const modBonus = this.raceConfig?.equippedMods?.includes('mod_counter_surge') ? 100 : 0;
+        this.awardFans(target, 200 + modBonus, `SHIELD DEFLECTED ${weapon}`, '#00D8FF');
+        this.recordFanDemandCombat('block_or_intercept', target);
       } else if (attacker?.isPlayer) {
         this.audio.playShieldBlock();
         this.pushFeed(`${target.name} BLOCKED ${weapon}`, '#00D8FF');
@@ -1965,13 +2267,20 @@ export class RaceEngine {
 
     this.spawnBurst(target.x, target.y + 1.0, target.z, destroyed ? 36 : 18, POWERUP_DEFS[weapon].hexColor, destroyed ? 20 : 14);
 
+    if (attacker?.isPlayer && this.raceConfig?.mode === 'destruction_arena') {
+      const pts = destroyed ? 550 : 200;
+      this.destructionScore += pts;
+    }
+
     if (target.isPlayer || attacker?.isPlayer) {
       this.audio.playImpact(true);
       if (destroyed) {
         this.hitstopTimer = 0.065;
         this.chaseCamera.addTrauma(0.9);
         if (attacker?.isPlayer) {
-          this.awardFans(attacker, 300, `WRECKED ${target.name}! +300 FANS`, '#FF2A55');
+          this.awardFans(attacker, 300, `WRECKED ${target.name}!`, '#FF2A55');
+          this.recordFanDemandCombat('hit_opponents', attacker);
+          if (attacker.rearFireMode) this.recordFanDemandCombat('rear_fire_hit', attacker);
         } else {
           this.pushFeed(`WRECKED BY ${attacker?.name ?? 'HAZARD'}!`, '#FF2A55');
         }
@@ -1979,7 +2288,9 @@ export class RaceEngine {
         this.hitstopTimer = 0.035;
         this.chaseCamera.addTrauma(0.5);
         if (attacker?.isPlayer) {
-          this.awardFans(attacker, 150, `${weapon} HIT ${target.name} +150 FANS`, POWERUP_DEFS[weapon].color);
+          this.awardFans(attacker, 150, `${weapon} HIT ${target.name}`, POWERUP_DEFS[weapon].color);
+          this.recordFanDemandCombat('hit_opponents', attacker);
+          if (attacker.rearFireMode) this.recordFanDemandCombat('rear_fire_hit', attacker);
         } else {
           this.pushFeed(`HIT BY ${attacker?.name ?? 'HAZARD'} (${weapon})`, POWERUP_DEFS[weapon].color);
         }
@@ -2012,7 +2323,10 @@ export class RaceEngine {
         if (racer.destroyed || racer.eliminated) continue;
         const dx = racer.x - node.x;
         const dz = racer.z - node.z;
-        if (dx * dx + dz * dz < 6.5) {
+        const radiusMult =
+          racer.isPlayer && this.raceConfig?.equippedMods?.includes('mod_magnetic_intake') ? 1.18 : 1.0;
+        const pickupSq = 6.5 * radiusMult * radiusMult;
+        if (dx * dx + dz * dz < pickupSq) {
           const res = collectPowerUp(racer.inventory, racer.activeSlot, node.type);
           if (res.collected) {
             racer.activeSlot = res.newActiveSlot;
@@ -2294,11 +2608,34 @@ export class RaceEngine {
         rig.shieldDome.rotation.y += dt * 1.8;
       }
 
-      // Hit flash emissive pulse
+      // Hit flash emissive pulse + V7.0 5-Stage Progressive Visible Damage & LOD update
+      const damageStage = computeVehicleDamageStage(r.hp, r.maxHp, r.destroyed);
+      applyVehicleDamageVisuals(rig, damageStage, this.elapsedClock);
+      if (rig.lod) {
+        rig.lod.update(this.camera);
+      }
+
       const flash = r.hitFlashTimer > 0;
-      for (const mat of rig.hitFlashMaterials) {
-        mat.emissive.setHex(flash ? 0xffffff : 0x000000);
-        mat.emissiveIntensity = flash ? 0.65 : 0;
+      if (flash) {
+        for (const mat of rig.hitFlashMaterials) {
+          mat.emissive.setHex(0xffffff);
+          mat.emissiveIntensity = 0.65;
+        }
+      }
+
+      // Critical damage embers & smoke trail
+      if ((damageStage === 'critical' || damageStage === 'wrecked') && Math.random() < 0.45) {
+        this.spawnParticle(
+          r.x,
+          r.y + 0.9,
+          r.z,
+          (Math.random() - 0.5) * 2.5,
+          2.6,
+          (Math.random() - 0.5) * 2.5,
+          0.42,
+          0.36,
+          damageStage === 'wrecked' ? 0xff4500 : 0xffaa22,
+        );
       }
 
       // Spawn-protection blink or destroyed tilt
@@ -2442,8 +2779,16 @@ export class RaceEngine {
     }
 
     const speedKmh = player ? Math.round(Math.abs(player.speed) * 3.6) : 0;
-    const gear = Math.max(1, Math.min(6, Math.floor(speedKmh / 48) + 1));
-    const rpmRatio = Math.min(1, Math.max(0.12, (speedKmh % 48) / 48 + 0.2));
+    const carTop = player ? getVehicleById(player.vehicleId).stats.topSpeed : 80;
+    const trans = computeTransmissionTelemetry(
+      player ? player.speed : 0,
+      carTop,
+      player && player.speed > 1 ? 1 : 0,
+      Boolean(player && player.nitroTimer > 0),
+    );
+    const gear = trans.gear;
+    const rpmRatio = trans.rpmRatio;
+    this.lastHudGear = gear;
 
     // Compute 3D screen-space Target Lock-On Reticle when holding SHUNT or BOLT
     let lockTargetScreen: { x: number; y: number; name: string; dist: number; color: string } | null = null;
@@ -2455,7 +2800,8 @@ export class RaceEngine {
       !player.rearFireMode
     ) {
       let bestTarget: RacerState | null = null;
-      let bestDist = 165;
+      const lockMult = this.raceConfig?.equippedMods?.includes('mod_precision_optics') ? 1.15 : 1.0;
+      let bestDist = 165 * lockMult;
       for (const r of this.racers) {
         if (r.id === player.id || r.destroyed || r.eliminated) continue;
         const d = forwardTrackDistance(this.currentTrack, player.trackT, r.trackT);
@@ -2480,9 +2826,14 @@ export class RaceEngine {
     }
 
     const sorted = sortRaceStandings(this.racers);
+    const activeParticles = this.particles.reduce((acc, p) => acc + (p.active ? 1 : 0), 0);
+    const damageStage = player
+      ? computeVehicleDamageStage(player.hp, player.maxHp, player.destroyed)
+      : 'healthy';
 
     return {
       phase: this.racePhase,
+      mode: this.raceConfig?.mode ?? 'combat_race',
       countdownValue: Math.max(0, Math.ceil(this.countdownTimer)),
       position: player?.position ?? 1,
       totalRacers: this.racers.length || 1,
@@ -2496,6 +2847,7 @@ export class RaceEngine {
       hp: Math.round(player?.hp ?? 120),
       maxHp: Math.round(player?.maxHp ?? 120),
       maxHealthBlocks: player?.maxHealthBlocks ?? 6,
+      damageStage,
       shieldActive: (player?.shieldTimer ?? 0) > 0,
       shieldRemaining: player?.shieldTimer ?? 0,
       nitroActive: (player?.nitroTimer ?? 0) > 0,
@@ -2521,6 +2873,38 @@ export class RaceEngine {
       pingMs: this.pingMs,
       finalLapBanner: this.finalLapShown && this.raceTime > 5,
       eliminationTimer: Math.ceil(this.eliminationTimer),
+      modeTimeRemaining: Math.ceil(this.modeTimeRemaining),
+      destructionScore: this.destructionScore,
+      checkpointsCleared: this.checkpointsCleared,
+      fanRun: this.fanRun
+        ? {
+            active: this.fanRun.active,
+            completed: this.fanRun.completed,
+            gatesCleared: this.fanRun.gatesCleared,
+            gatesTotal: this.fanRun.gatesTotal,
+            remainingSec: Math.ceil(this.fanRun.remainingSec),
+          }
+        : null,
+      fanDemand: this.fanDemand
+        ? {
+            label: this.fanDemand.label,
+            progress: Number(this.fanDemand.progress.toFixed(1)),
+            target: this.fanDemand.target,
+            remainingSec: Math.ceil(this.fanDemand.remainingSec),
+            status: this.fanDemand.status,
+          }
+        : null,
+      diagnostics: {
+        fps: this.measuredFps,
+        frameTimeMs: Number((1000 / Math.max(1, this.measuredFps)).toFixed(1)),
+        drawCalls: this.renderer.info.render.calls,
+        triangles: this.renderer.info.render.triangles,
+        physicsMs: 1.2,
+        resolution: `${this.container.clientWidth}x${this.container.clientHeight}`,
+        pingMs: this.pingMs,
+        snapshotBytes: 0,
+        isSoftwareGl: this.isSoftwareGl,
+      },
       combatFeed: [...this.combatFeed],
       minimapDots: this.racers
         .filter((r) => !r.eliminated)
@@ -2542,6 +2926,7 @@ export class RaceEngine {
         finishTime: r.finishTime,
         hitsLanded: r.hitsLanded,
         takedowns: r.takedowns,
+        blocksLanded: r.blocksLanded,
         isPlayer: r.isPlayer,
         eliminated: r.eliminated,
       })),

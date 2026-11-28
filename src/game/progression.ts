@@ -228,6 +228,14 @@ export function createDefaultProfile(): PlayerProfile {
     completedCareerIds: [],
     claimedMissionIds: [],
     unlockedAchievements: [],
+    careerLights: 0,
+    careerRecords: {},
+    vehicleMastery: {},
+    onlineRank: 1,
+    onlineXp: 0,
+    prestigeTier: 0,
+    equippedMods: ['mod_magnetic_intake'],
+    firebaseUid: null,
   };
 }
 
@@ -265,6 +273,9 @@ export function loadLocalProfile(): PlayerProfile {
         ...defaults.customizations,
         ...(parsed.customizations ?? {}),
       },
+      careerRecords: parsed.careerRecords ?? {},
+      vehicleMastery: parsed.vehicleMastery ?? {},
+      equippedMods: Array.isArray(parsed.equippedMods) ? parsed.equippedMods.slice(0, 3) : defaults.equippedMods,
     };
   } catch {
     return createDefaultProfile();

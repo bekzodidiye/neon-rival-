@@ -101,7 +101,10 @@ export type GameModeId =
   | 'time_trial'
   | 'elimination'
   | 'destruction_arena'
+  | 'checkpoint'
   | 'training';
+
+export type VehicleDamageStage = 'healthy' | 'light' | 'moderate' | 'critical' | 'wrecked';
 
 export type Difficulty = 'easy' | 'normal' | 'hard' | 'expert';
 
@@ -110,6 +113,8 @@ export type LanguageCode = 'en' | 'uz' | 'ru';
 export type GraphicsPreset = 'low' | 'medium' | 'high' | 'ultra';
 
 export type CameraMode = 'near' | 'far' | 'hood';
+
+export type GarageCameraAngle = 'orbit' | 'front' | 'rear' | 'side' | 'three_quarter';
 
 export type AppScreen =
   | 'title'
@@ -302,6 +307,16 @@ export interface RaceConfig {
   aiCount: number;
   isMultiplayer: boolean;
   roomCode?: string;
+  careerEventId?: string;
+  careerGroupId?: string;
+  timeLimitSec?: number;
+  modeThresholds?: [number, number, number];
+  equippedMods?: string[];
+  isRivalShowdown?: boolean;
+  rivalName?: string;
+  rivalVehicleId?: string;
+  rivalCustomization?: Partial<VehicleCustomization>;
+  rivalAggression?: number;
 }
 
 export interface CombatFeedItem {
@@ -319,6 +334,18 @@ export interface MinimapDot {
   color: string;
 }
 
+export interface GraphicsDiagnostics {
+  fps: number;
+  frameTimeMs: number;
+  drawCalls: number;
+  triangles: number;
+  physicsMs: number;
+  resolution: string;
+  pingMs: number;
+  snapshotBytes: number;
+  isSoftwareGl: boolean;
+}
+
 export interface RaceHudSnapshot {
   phase: 'countdown' | 'racing' | 'finished';
   countdownValue: number; // 3, 2, 1, 0 (GO)
@@ -334,6 +361,7 @@ export interface RaceHudSnapshot {
   hp: number;
   maxHp: number;
   maxHealthBlocks: number;
+  damageStage?: VehicleDamageStage;
   shieldActive: boolean;
   shieldRemaining: number;
   nitroActive: boolean;
@@ -354,6 +382,27 @@ export interface RaceHudSnapshot {
   activeSlot: number;
   fps: number;
   pingMs: number;
+  diagnostics?: GraphicsDiagnostics;
+  mode?: GameModeId;
+  modeTimeRemaining?: number;
+  checkpointTimer?: number;
+  checkpointsCleared?: number;
+  destructionScore?: number;
+  destructionTarget?: number;
+  fanDemand?: {
+    label: string;
+    progress: number;
+    target: number;
+    remainingSec: number;
+    status: 'active' | 'succeeded' | 'failed';
+  } | null;
+  fanRun?: {
+    active: boolean;
+    gatesCleared: number;
+    gatesTotal: number;
+    remainingSec: number;
+    completed: boolean;
+  } | null;
   finalLapBanner: boolean;
   eliminationTimer: number;
   combatFeed: CombatFeedItem[];
@@ -369,6 +418,7 @@ export interface RaceHudSnapshot {
     finishTime: number;
     hitsLanded: number;
     takedowns: number;
+    blocksLanded?: number;
     isPlayer: boolean;
     eliminated: boolean;
   }[];
@@ -415,6 +465,54 @@ export interface PlayerProfile {
   completedCareerIds: string[];
   claimedMissionIds: string[];
   unlockedAchievements: string[];
+  careerLights?: number;
+  careerRecords?: Record<
+    string,
+    {
+      eventId: string;
+      groupId: string;
+      bestPosition: number;
+      bestScore: number;
+      bestTimeMs: number;
+      lightsEarned: number;
+      fanRunCompleted: boolean;
+      fanDemandCompleted: boolean;
+      completed: boolean;
+    }
+  >;
+  careerEventRecords?: Record<
+    string,
+    {
+      eventId: string;
+      groupId: string;
+      bestPosition: number;
+      bestScore: number;
+      bestTimeMs: number;
+      lightsEarned: number;
+      fanRunCompleted: boolean;
+      fanDemandCompleted: boolean;
+      completed: boolean;
+    }
+  >;
+  vehicleMastery?: Record<
+    string,
+    {
+      vehicleId: string;
+      racesCompleted: number;
+      wins: number;
+      distanceMeters: number;
+      bestLapMs: number;
+      combatActions: number;
+      defensiveActions: number;
+      masteryLevel: number;
+    }
+  >;
+  equippedMods?: string[];
+  onlineRank?: number;
+  onlineXp?: number;
+  prestigeTier?: number;
+  cloudUid?: string | null;
+  firebaseUid?: string | null;
 }
 
 export interface MultiplayerPlayerInfo {

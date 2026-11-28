@@ -23,6 +23,7 @@ export const VALID_GAME_MODES: readonly GameModeId[] = [
   'time_trial',
   'elimination',
   'destruction_arena',
+  'checkpoint',
   'training',
 ] as const;
 

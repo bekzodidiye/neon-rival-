@@ -724,16 +724,199 @@ export function buildTrackScene(
     }
   }
 
-  // 7. Distinct 3D Holographic Floating Power-Up Emblem Gates
+  // 6d. Track-Specific Architectural Identity (V7.0 Part 4: Three Distinct Racing Environments)
+  if (track.def.id === 'industrial_port') {
+    // Harbor Water Bay plane around the container terminal peninsula
+    const waterGeo = trackGeo(new THREE.PlaneGeometry(2400, 2400));
+    waterGeo.rotateX(-Math.PI / 2);
+    const waterMat = trackMat(
+      new THREE.MeshStandardMaterial({
+        color: 0x15354d,
+        roughness: 0.24,
+        metalness: 0.45,
+        envMapIntensity: 0.9,
+      }),
+    );
+    const harborWater = new THREE.Mesh(waterGeo, waterMat);
+    harborWater.position.set(220, -0.35, 100);
+    group.add(harborWater);
+
+    // Colorful Stacked Instanced Shipping Containers (1–3 high) along loading zones
+    const containerSpots: { x: number; y: number; z: number; yaw: number; color: number }[] = [];
+    const containerPalette = [0xc2410c, 0x1d4ed8, 0x0f766e, 0xb91c1c, 0xd97706, 0x334155];
+    for (let i = 6; i < n; i += 6) {
+      const s = samples[i];
+      if (s.isTunnel || s.y > 1.0) continue;
+      const yaw = Math.atan2(s.tx, s.tz);
+      for (const side of [-1, 1]) {
+        const stacks = 1 + ((i + (side > 0 ? 1 : 0)) % 3);
+        const lat = halfW + 7.2 + ((i * 5) % 6);
+        for (let st = 0; st < stacks; st++) {
+          containerSpots.push({
+            x: s.x + s.rx * side * lat,
+            y: s.y + st * 2.7,
+            z: s.z + s.rz * side * lat,
+            yaw,
+            color: containerPalette[(i + st + (side > 0 ? 2 : 0)) % containerPalette.length],
+          });
+        }
+      }
+    }
+    if (containerSpots.length > 0) {
+      const contGeo = trackGeo(new THREE.BoxGeometry(2.6, 2.6, 11.8));
+      contGeo.translate(0, 1.3, 0);
+      const contMat = trackMat(new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.62, metalness: 0.35 }));
+      const contInst = new THREE.InstancedMesh(contGeo, contMat, containerSpots.length);
+      const col = new THREE.Color();
+      containerSpots.forEach((c, idx) => {
+        dummy.position.set(c.x, c.y, c.z);
+        dummy.rotation.set(0, c.yaw, 0);
+        dummy.scale.set(1, 1, 1);
+        dummy.updateMatrix();
+        contInst.setMatrixAt(idx, dummy.matrix);
+        col.setHex(c.color);
+        contInst.setColorAt(idx, col);
+      });
+      contInst.computeBoundingSphere();
+      group.add(contInst);
+    }
+
+    // Tall Steel Harbor Gantry Cranes framing major straights
+    const craneMat = trackMat(new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.48, metalness: 0.65 }));
+    const craneLegGeo = trackGeo(new THREE.BoxGeometry(1.1, 24, 1.1));
+    const craneBoomGeo = trackGeo(new THREE.BoxGeometry(36, 1.6, 1.8));
+    for (const frac of [0.1, 0.44, 0.74]) {
+      const s = samples[Math.floor(frac * n) % n];
+      const cg = new THREE.Group();
+      cg.position.set(s.x, s.y, s.z);
+      cg.rotation.y = Math.atan2(s.tx, s.tz);
+      for (const sx of [-1, 1]) {
+        for (const sz of [-4, 4]) {
+          const leg = new THREE.Mesh(craneLegGeo, craneMat);
+          leg.position.set(sx * (halfW + 10.5), 12, sz);
+          cg.add(leg);
+        }
+      }
+      const boom = new THREE.Mesh(craneBoomGeo, craneMat);
+      boom.position.set(0, 24.2, 0);
+      cg.add(boom);
+      group.add(cg);
+    }
+  } else if (track.def.id === 'midnight_streets') {
+    // Sunset Urban Street-Level Storefront Awnings & Parking Deck Canopies
+    const awningMat = trackMat(new THREE.MeshStandardMaterial({ color: 0x9f1239, roughness: 0.72, metalness: 0.15 }));
+    const deckMat = trackMat(new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.78, metalness: 0.22 }));
+    const awningGeo = trackGeo(new THREE.BoxGeometry(4.2, 0.35, 10.5));
+    const deckGeo = trackGeo(new THREE.BoxGeometry(12, 11, 22));
+    for (const frac of [0.08, 0.32, 0.56, 0.82]) {
+      const s = samples[Math.floor(frac * n) % n];
+      if (s.isTunnel) continue;
+      const mg = new THREE.Group();
+      mg.position.set(s.x, s.y, s.z);
+      mg.rotation.y = Math.atan2(s.tx, s.tz);
+      const awning = new THREE.Mesh(awningGeo, awningMat);
+      awning.position.set(halfW + 5.2, 4.2, 0);
+      awning.rotation.z = -0.22;
+      mg.add(awning);
+      const parkingDeck = new THREE.Mesh(deckGeo, deckMat);
+      parkingDeck.position.set(-(halfW + 13), 5.5, 0);
+      mg.add(parkingDeck);
+      group.add(mg);
+    }
+  } else {
+    // Neon City: Pedestrian Crosswalk Stripes & Illuminated Roadside Service Canopy + Distant Skyline Ring
+    const stripeGeo = trackGeo(new THREE.PlaneGeometry(1.1, 4.4));
+    stripeGeo.rotateX(-Math.PI / 2);
+    const stripeMat = trackMat(new THREE.MeshStandardMaterial({ color: 0xdbeafe, roughness: 0.72, metalness: 0.05 }));
+    for (const frac of [0.12, 0.38, 0.68]) {
+      const s = samples[Math.floor(frac * n) % n];
+      if (s.isTunnel) continue;
+      const cw = new THREE.Group();
+      cw.position.set(s.x, s.y + 0.035, s.z);
+      cw.rotation.y = Math.atan2(s.tx, s.tz);
+      for (let lx = -halfW + 2.5; lx <= halfW - 2.5; lx += 2.6) {
+        const st = new THREE.Mesh(stripeGeo, stripeMat);
+        st.position.set(lx, 0, 0);
+        cw.add(st);
+      }
+      group.add(cw);
+    }
+
+    // Illuminated Service Station / Pit Canopy Landmark near main straight
+    const canopySample = samples[Math.floor(0.06 * n) % n];
+    const canopy = new THREE.Group();
+    canopy.position.set(canopySample.x, canopySample.y, canopySample.z);
+    canopy.rotation.y = Math.atan2(canopySample.tx, canopySample.tz);
+    const roof = new THREE.Mesh(
+      trackGeo(new THREE.BoxGeometry(10.5, 0.9, 18)),
+      trackMat(new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.45, metalness: 0.55 })),
+    );
+    roof.position.set(halfW + 9.2, 5.8, 0);
+    const strip = new THREE.Mesh(
+      trackGeo(new THREE.BoxGeometry(10.7, 0.25, 18.2)),
+      trackMat(new THREE.MeshBasicMaterial({ color: 0x38bdf8 })),
+    );
+    strip.position.set(halfW + 9.2, 5.35, 0);
+    canopy.add(roof, strip);
+    for (const sz of [-6.5, 6.5]) {
+      const colMesh = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.75, 5.6, 0.75)), pillarMat);
+      colMesh.position.set(halfW + 9.2, 2.8, sz);
+      canopy.add(colMesh);
+    }
+    group.add(canopy);
+  }
+
+  // Distant City Skyline Ring (adds depth on horizon for all circuits)
+  const skylineCount = 36;
+  const skylineGeo = trackGeo(new THREE.BoxGeometry(1, 1, 1));
+  skylineGeo.translate(0, 0.5, 0);
+  const skylineMat = trackMat(
+    new THREE.MeshStandardMaterial({
+      color: track.def.id === 'industrial_port' ? 0x64748b : track.def.id === 'midnight_streets' ? 0x3b2c3d : 0x162238,
+      roughness: 0.85,
+      metalness: 0.15,
+    }),
+  );
+  const skylineInst = new THREE.InstancedMesh(skylineGeo, skylineMat, skylineCount);
+  for (let i = 0; i < skylineCount; i++) {
+    const ang = (i / skylineCount) * Math.PI * 2;
+    const rad = 680 + (i % 4) * 45;
+    const h = 48 + ((i * 37) % 110);
+    const w = 24 + ((i * 13) % 28);
+    dummy.position.set(220 + Math.cos(ang) * rad, -0.5, 100 + Math.sin(ang) * rad);
+    dummy.rotation.set(0, ang, 0);
+    dummy.scale.set(w, h, w);
+    dummy.updateMatrix();
+    skylineInst.setMatrixAt(i, dummy.matrix);
+  }
+  skylineInst.computeBoundingSphere();
+  group.add(skylineInst);
+
+  // 7. Distinct 3D World-Space Power-Up Silhouettes + Glowing Emblem Gates (V7.0 Sec 22)
   const pickupMeshes = new Map<string, THREE.Group>();
-  const iconPlaneGeo = trackGeo(new THREE.PlaneGeometry(2.45, 2.45));
-  const beamGeo = trackGeo(new THREE.CylinderGeometry(0.58, 1.25, 3.4, 12, 1, true));
+  const iconPlaneGeo = trackGeo(new THREE.PlaneGeometry(2.35, 2.35));
+  const beamGeo = trackGeo(new THREE.CylinderGeometry(0.55, 1.22, 3.4, 12, 1, true));
   const ringGeo = trackGeo(new THREE.RingGeometry(1.0, 1.42, 24));
   ringGeo.rotateX(-Math.PI / 2);
+
+  // Distinct 3D geometric silhouette primitives per power-up type
+  const shuntGeo = trackGeo(new THREE.ConeGeometry(0.42, 1.35, 8));
+  shuntGeo.rotateX(Math.PI / 2);
+  const boltGeo = trackGeo(new THREE.OctahedronGeometry(0.52, 0));
+  boltGeo.scale(0.55, 1.35, 0.55);
+  const bargeGeo = trackGeo(new THREE.TorusGeometry(0.65, 0.16, 8, 18));
+  const mineGeo = trackGeo(new THREE.IcosahedronGeometry(0.56, 0));
+  const shockGeo = trackGeo(new THREE.OctahedronGeometry(0.66, 0));
+  const shieldGeo = trackGeo(new THREE.CylinderGeometry(0.68, 0.52, 0.24, 6));
+  shieldGeo.rotateX(Math.PI / 2);
+  const nitroGeo = trackGeo(new THREE.ConeGeometry(0.46, 1.25, 4));
+  const repairBarH = trackGeo(new THREE.BoxGeometry(1.1, 0.34, 0.34));
+  const repairBarV = trackGeo(new THREE.BoxGeometry(0.34, 1.1, 0.34));
 
   const iconMats = {} as Record<PowerUpType, THREE.MeshBasicMaterial>;
   const beamMats = {} as Record<PowerUpType, THREE.MeshBasicMaterial>;
   const padMats = {} as Record<PowerUpType, THREE.MeshBasicMaterial>;
+  const shapeMats = {} as Record<PowerUpType, THREE.MeshStandardMaterial>;
 
   for (const type of Object.keys(POWERUP_DEFS) as PowerUpType[]) {
     const def = POWERUP_DEFS[type];
@@ -741,6 +924,7 @@ export function buildTrackScene(
       new THREE.MeshBasicMaterial({
         map: textures.powerUpIcons[type],
         transparent: true,
+        opacity: 0.78,
         side: THREE.DoubleSide,
         depthWrite: false,
       }),
@@ -749,7 +933,7 @@ export function buildTrackScene(
       new THREE.MeshBasicMaterial({
         color: def.hexColor,
         transparent: true,
-        opacity: 0.18,
+        opacity: 0.16,
         blending: THREE.AdditiveBlending,
         side: THREE.DoubleSide,
         depthWrite: false,
@@ -759,9 +943,18 @@ export function buildTrackScene(
       new THREE.MeshBasicMaterial({
         color: def.hexColor,
         transparent: true,
-        opacity: 0.68,
+        opacity: 0.7,
         blending: THREE.AdditiveBlending,
         depthWrite: false,
+      }),
+    );
+    shapeMats[type] = trackMat(
+      new THREE.MeshStandardMaterial({
+        color: def.hexColor,
+        emissive: def.hexColor,
+        emissiveIntensity: 1.15,
+        roughness: 0.22,
+        metalness: 0.65,
       }),
     );
   }
@@ -772,10 +965,53 @@ export function buildTrackScene(
 
     const coreGroup = new THREE.Group();
     coreGroup.name = 'core';
+
+    // Add distinct 3D emblem silhouette per power-up type
+    const mat3d = shapeMats[node.type];
+    switch (node.type) {
+      case 'SHUNT':
+        coreGroup.add(new THREE.Mesh(shuntGeo, mat3d));
+        break;
+      case 'BOLT':
+        for (const ox of [-0.32, 0, 0.32]) {
+          const b = new THREE.Mesh(boltGeo, mat3d);
+          b.position.x = ox;
+          b.scale.setScalar(ox === 0 ? 1.0 : 0.72);
+          coreGroup.add(b);
+        }
+        break;
+      case 'BARGE': {
+        const t1 = new THREE.Mesh(bargeGeo, mat3d);
+        const t2 = new THREE.Mesh(bargeGeo, mat3d);
+        t2.rotation.y = Math.PI / 2;
+        coreGroup.add(t1, t2);
+        break;
+      }
+      case 'MINE':
+        coreGroup.add(new THREE.Mesh(mineGeo, mat3d));
+        break;
+      case 'SHOCK':
+        coreGroup.add(new THREE.Mesh(shockGeo, mat3d));
+        break;
+      case 'SHIELD':
+        coreGroup.add(new THREE.Mesh(shieldGeo, mat3d));
+        break;
+      case 'NITRO': {
+        const c1 = new THREE.Mesh(nitroGeo, mat3d);
+        c1.position.y = 0.25;
+        const c2 = new THREE.Mesh(nitroGeo, mat3d);
+        c2.position.y = -0.3;
+        c2.scale.setScalar(0.72);
+        coreGroup.add(c1, c2);
+        break;
+      }
+      case 'REPAIR':
+        coreGroup.add(new THREE.Mesh(repairBarH, mat3d), new THREE.Mesh(repairBarV, mat3d));
+        break;
+    }
+
     const planeA = new THREE.Mesh(iconPlaneGeo, iconMats[node.type]);
-    const planeB = new THREE.Mesh(iconPlaneGeo, iconMats[node.type]);
-    planeB.rotation.y = Math.PI / 2;
-    coreGroup.add(planeA, planeB);
+    coreGroup.add(planeA);
     puGroup.add(coreGroup);
 
     const beam = new THREE.Mesh(beamGeo, beamMats[node.type]);

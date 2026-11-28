@@ -1,0 +1,236 @@
+{
+  "entities": {
+    "DriverProfile": {
+      "title": "DriverProfile",
+      "description": "Authenticated driver cloud profile storing offline career progression, selected vehicle, active mods, and vehicle ownership.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the driver who owns this profile.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Public driver callsign shown on menus and garage.",
+          "minLength": 2,
+          "maxLength": 24,
+          "pattern": "^[a-zA-Z0-9 _\\-]+$"
+        },
+        "selectedVehicleId": {
+          "type": "string",
+          "description": "Currently selected vehicle ID.",
+          "enum": ["street_falcon", "sand_runner", "night_viper", "cyber_gtr", "phantom_x"]
+        },
+        "careerLights": {
+          "type": "number",
+          "description": "Total unique permanent Lights earned across career events."
+        },
+        "careerReputation": {
+          "type": "number",
+          "description": "Cumulative career Fans reputation."
+        },
+        "offlineCredits": {
+          "type": "number",
+          "description": "Local career credits (strictly separate from server-verified online economy)."
+        },
+        "unlockedVehicles": {
+          "type": "array",
+          "description": "Bounded list of unlocked vehicle IDs (max 10)."
+        },
+        "equippedMods": {
+          "type": "array",
+          "description": "Up to 3 equipped passive mod IDs."
+        },
+        "prestigeTier": {
+          "type": "number",
+          "description": "Optional prestige tier (0 to 10)."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when profile was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of the latest profile update."
+        }
+      },
+      "required": [
+        "ownerId",
+        "displayName",
+        "selectedVehicleId",
+        "careerLights",
+        "careerReputation",
+        "offlineCredits",
+        "unlockedVehicles",
+        "equippedMods",
+        "prestigeTier",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "CareerEventRecord": {
+      "title": "CareerEventRecord",
+      "description": "Best verified career result and permanent Lights for a single career event under a driver profile.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "description": "Firebase Auth UID matching the parent driver profile.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "eventId": {
+          "type": "string",
+          "description": "Career event identifier.",
+          "minLength": 2,
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "groupId": {
+          "type": "string",
+          "description": "Career group identifier.",
+          "minLength": 2,
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "bestPosition": {
+          "type": "number",
+          "description": "Best finishing position (1-20) or 1 for cleared challenge."
+        },
+        "bestScore": {
+          "type": "number",
+          "description": "Highest event score or destruction points."
+        },
+        "bestTimeMs": {
+          "type": "number",
+          "description": "Fastest event completion time in milliseconds."
+        },
+        "lightsEarned": {
+          "type": "number",
+          "description": "Permanent Lights earned for this event (0-5)."
+        },
+        "fanRunCompleted": {
+          "type": "boolean",
+          "description": "Whether the optional Fan Run gate sequence was completed."
+        },
+        "fanDemandCompleted": {
+          "type": "boolean",
+          "description": "Whether the event Fan Demand objective was completed."
+        },
+        "completedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when first completed."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when best record was updated."
+        }
+      },
+      "required": [
+        "ownerId",
+        "eventId",
+        "groupId",
+        "bestPosition",
+        "bestScore",
+        "bestTimeMs",
+        "lightsEarned",
+        "fanRunCompleted",
+        "fanDemandCompleted",
+        "completedAt",
+        "updatedAt"
+      ]
+    },
+    "VehicleMasteryRecord": {
+      "title": "VehicleMasteryRecord",
+      "description": "Per-vehicle progression and mastery statistics owned by a driver.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "description": "Firebase Auth UID matching the parent driver profile.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "vehicleId": {
+          "type": "string",
+          "description": "Vehicle identifier.",
+          "enum": ["street_falcon", "sand_runner", "night_viper", "cyber_gtr", "phantom_x"]
+        },
+        "racesCompleted": {
+          "type": "number",
+          "description": "Total completed races in this vehicle."
+        },
+        "wins": {
+          "type": "number",
+          "description": "Total wins in this vehicle."
+        },
+        "distanceMeters": {
+          "type": "number",
+          "description": "Cumulative distance driven in meters."
+        },
+        "bestLapMs": {
+          "type": "number",
+          "description": "Best lap time in milliseconds (0 if unset)."
+        },
+        "combatActions": {
+          "type": "number",
+          "description": "Total offensive combat hits/wrecks landed."
+        },
+        "defensiveActions": {
+          "type": "number",
+          "description": "Total shield blocks, interceptions, and evasions."
+        },
+        "masteryLevel": {
+          "type": "number",
+          "description": "Computed mastery level (1 to 10)."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of initial mastery record."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of latest mastery update."
+        }
+      },
+      "required": [
+        "ownerId",
+        "vehicleId",
+        "racesCompleted",
+        "wins",
+        "distanceMeters",
+        "bestLapMs",
+        "combatActions",
+        "defensiveActions",
+        "masteryLevel",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/drivers/{driverId}": {
+      "schema": { "$ref": "#/entities/DriverProfile" },
+      "description": "Owner-isolated driver cloud profile storing offline career progression and customization."
+    },
+    "/drivers/{driverId}/careerEvents/{eventId}": {
+      "schema": { "$ref": "#/entities/CareerEventRecord" },
+      "description": "Per-event best career records and permanent Lights under a driver's profile."
+    },
+    "/drivers/{driverId}/vehicleMastery/{vehicleId}": {
+      "schema": { "$ref": "#/entities/VehicleMasteryRecord" },
+      "description": "Per-vehicle progression and mastery statistics under a driver's profile."
+    }
+  }
+}

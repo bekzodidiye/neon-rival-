@@ -16,11 +16,18 @@ interface RaceSetupModalProps {
 
 const MODES: { id: GameModeId; label: string; desc: string; accent: string }[] = [
   { id: 'combat_race', label: 'COMBAT RACE', desc: 'All 8 energy power-ups · 8-car street battle', accent: '#00C8FF' },
+  { id: 'destruction_arena', label: 'DESTRUCTION', desc: 'Score combat hits & wrecks before the clock runs out', accent: '#FF8A00' },
+  { id: 'checkpoint', label: 'CHECKPOINT', desc: 'Beat the clock by chaining high-speed time gates', accent: '#00F5D4' },
   { id: 'pure_race', label: 'PURE RACE', desc: 'Zero weapons · Pure high-speed apex racing', accent: '#25F4A0' },
   { id: 'elimination', label: 'ELIMINATION', desc: 'Last-place driver knocked out every 20 seconds', accent: '#FF365E' },
   { id: 'time_trial', label: 'TIME TRIAL', desc: 'Solo track run to beat your personal best lap', accent: '#8B5CF6' },
-  { id: 'training', label: 'TRAINING', desc: 'Practice drifting & power-up combos vs AI', accent: '#FF8A00' },
 ];
+
+const TRACK_TIME_LABEL: Record<TrackId, string> = {
+  neon_city: 'NIGHT',
+  industrial_port: 'DAYTIME',
+  midnight_streets: 'SUNSET',
+};
 
 export const RaceSetupModal: React.FC<RaceSetupModalProps> = ({
   language,
@@ -64,7 +71,7 @@ export const RaceSetupModal: React.FC<RaceSetupModalProps> = ({
         {/* Game Mode Cards */}
         <div className="mt-5">
           <div className="text-xs font-mono-num text-[#94A3B8] tracking-widest mb-2">SELECT MODE</div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
             {MODES.map((m) => {
               const selected = mode === m.id;
               return (
@@ -107,7 +114,7 @@ export const RaceSetupModal: React.FC<RaceSetupModalProps> = ({
                 >
                   <div className="flex items-center justify-between">
                     <span className="font-display font-bold italic text-base text-[#F5F7FA]">{tr.name}</span>
-                    <span className="text-[10px] font-mono-num text-[#00C8FF]">NIGHT</span>
+                    <span className="text-[10px] font-mono-num text-[#00C8FF]">{TRACK_TIME_LABEL[tr.id]}</span>
                   </div>
                   <div className="mt-1 text-xs text-[#94A3B8]">{tr.subtitle}</div>
                   <div className="mt-2 flex gap-2 text-[10px] font-mono-num text-[#64748B]">

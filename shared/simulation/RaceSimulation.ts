@@ -58,6 +58,8 @@ export interface SimParticipantConfig {
   vehicleId: string;
   customization?: Partial<VehicleCustomization>;
   isAi: boolean;
+  aiAggression?: number;
+  equippedMods?: string[];
 }
 
 export interface RaceSimulationConfig {
@@ -69,6 +71,8 @@ export interface RaceSimulationConfig {
   participants: SimParticipantConfig[];
   countdownSeconds?: number;
   seed?: number;
+  timeLimitSec?: number;
+  targetCheckpoints?: number;
 }
 
 export interface SimulationMetrics {
@@ -127,6 +131,9 @@ export class RaceSimulation {
   public phase: 'countdown' | 'racing' | 'finished' = 'countdown';
   public countdownTimer: number;
   public raceTime = 0;
+  public modeTimeRemaining: number;
+  public targetCheckpoints: number;
+  public destructionScores = new Map<string, number>();
 
   public racers: RacerState[] = [];
   public pickups: TrackPickupNode[] = [];
@@ -136,6 +143,7 @@ export class RaceSimulation {
   public bargeWaves: BargeWaveState[] = [];
 
   public readonly participantUserIds = new Map<string, string | null>();
+  public readonly participantMods = new Map<string, string[]>();
   public readonly lastProcessedSeq = new Map<string, number>();
   public readonly metrics: SimulationMetrics = {
     ticksSimulated: 0,
@@ -160,15 +168,32 @@ export class RaceSimulation {
     this.totalLaps = Math.max(1, Math.min(10, Math.round(config.laps)));
     this.difficulty = config.difficulty;
     this.countdownTimer = config.countdownSeconds ?? 2.5;
+    this.modeTimeRemaining =
+      config.timeLimitSec ??
+      (config.mode === 'checkpoint' ? 38 : config.mode === 'destruction_arena' ? 90 : 0);
+    this.targetCheckpoints = config.targetCheckpoints ?? 16;
     this.rng = config.seed !== undefined ? createMulberry32(config.seed) : Math.random;
 
     this.track = buildTrack(config.trackId);
     this.pickups = generateTrackPickups(this.track);
+    if (config.mode === 'checkpoint') {
+      // Checkpoint mode focuses on NITRO & time-extension pickup strategy
+      this.pickups.forEach((p, idx) => {
+        p.type = idx % 2 === 0 ? 'NITRO' : 'SHIELD';
+      });
+    } else if (config.mode === 'destruction_arena') {
+      const offensive: PowerUpType[] = ['SHUNT', 'BOLT', 'BARGE', 'MINE', 'SHOCK'];
+      this.pickups.forEach((p, idx) => {
+        p.type = offensive[idx % offensive.length];
+      });
+    }
 
     this.racers = config.participants.map((p, idx) => {
       const car = getVehicleById(p.vehicleId);
       const spawn = getSpawnGridTransform(this.track, idx);
       this.participantUserIds.set(p.id, p.userId ?? null);
+      this.participantMods.set(p.id, (p.equippedMods ?? []).slice(0, 3));
+      this.destructionScores.set(p.id, 0);
       this.lastProcessedSeq.set(p.id, 0);
 
       return {
@@ -241,7 +266,7 @@ export class RaceSimulation {
         aiLaneOffset: spawn.lateralOffset,
         aiLaneTimer: 1.0 + idx * 0.25,
         aiDecisionTimer: 1.6 + idx * 0.3,
-        aiAggression: 0.45 + (idx % 3) * 0.2,
+        aiAggression: p.aiAggression ?? 0.45 + (idx % 3) * 0.2,
       };
     });
 
@@ -287,6 +312,9 @@ export class RaceSimulation {
     const canDrive = this.phase === 'racing';
     if (canDrive) {
       this.raceTime += safeDt;
+      if (this.mode === 'checkpoint' || this.mode === 'destruction_arena') {
+        this.modeTimeRemaining = Math.max(0, this.modeTimeRemaining - safeDt);
+      }
     }
 
     // 1. Update Slipstream drafting flags
@@ -375,7 +403,16 @@ export class RaceSimulation {
       stepVehiclePhysics(racer, input, this.track, safeDt, canDrive);
 
       if (canDrive && !racer.finished) {
+        const prevPassed = racer.passedCheckpoints;
         const cpRes = updateRacerCheckpoints(racer, this.track, racer.trackT, this.totalLaps, this.raceTime);
+        if (this.mode === 'checkpoint' && racer.isPlayer && racer.passedCheckpoints > prevPassed) {
+          this.modeTimeRemaining = Math.min(90, this.modeTimeRemaining + 5.5);
+          if (racer.passedCheckpoints >= this.targetCheckpoints) {
+            racer.finished = true;
+            racer.finishTime = this.raceTime;
+            this.emitEvent({ type: 'finish', actorId: racer.id, value: racer.finishTime });
+          }
+        }
         if (cpRes.lapCompleted) {
           this.emitEvent({ type: 'lap', actorId: racer.id, value: racer.lap });
         }
@@ -396,7 +433,27 @@ export class RaceSimulation {
     this.stepCombat(safeDt);
 
     // 6. Authoritative race standings & match completion check
-    sortRaceStandings(this.racers);
+    if (this.mode === 'destruction_arena') {
+      const sorted = [...this.racers].sort(
+        (a, b) => (this.destructionScores.get(b.id) ?? 0) - (this.destructionScores.get(a.id) ?? 0),
+      );
+      sorted.forEach((r, idx) => {
+        r.position = idx + 1;
+      });
+    } else {
+      sortRaceStandings(this.racers);
+    }
+
+    if (canDrive && (this.mode === 'checkpoint' || this.mode === 'destruction_arena') && this.modeTimeRemaining <= 0) {
+      for (const r of this.racers) {
+        if (!r.finished) {
+          r.finished = true;
+          r.finishTime = this.raceTime;
+        }
+      }
+      this.phase = 'finished';
+      return;
+    }
 
     const activeRacers = this.racers.filter((r) => !r.eliminated);
     if (canDrive && activeRacers.length > 0 && activeRacers.every((r) => r.finished)) {
@@ -422,8 +479,10 @@ export class RaceSimulation {
         break;
       }
       case 'SHIELD': {
+        const mods = this.participantMods.get(owner.id) ?? [];
+        const shieldBonus = mods.includes('mod_aegis_capacitor') ? 15 : 0;
         owner.shieldTimer = POWERUP_BALANCE.SHIELD_DURATION;
-        owner.shieldHp = POWERUP_BALANCE.SHIELD_CAPACITY;
+        owner.shieldHp = POWERUP_BALANCE.SHIELD_CAPACITY + shieldBonus;
         break;
       }
       case 'REPAIR': {
@@ -611,6 +670,11 @@ export class RaceSimulation {
       });
       if (attacker) {
         applyComboFans(attacker, res.destroyedNow ? 300 : 120);
+        if (this.mode === 'destruction_arena') {
+          const comboMult = Math.min(4, 1 + Math.max(0, (attacker.comboCount ?? 1) - 1) * 0.5);
+          const pts = Math.round((res.destroyedNow ? 450 : 140) * comboMult);
+          this.destructionScores.set(attacker.id, (this.destructionScores.get(attacker.id) ?? 0) + pts);
+        }
       }
       if (res.destroyedNow) {
         this.metrics.wrecks += 1;
@@ -638,15 +702,20 @@ export class RaceSimulation {
       // Atomic exclusive pickup ownership: first eligible racer wins the pickup on this tick
       for (const racer of this.racers) {
         if (racer.destroyed || racer.eliminated || racer.finished) continue;
+        const mods = this.participantMods.get(racer.id) ?? [];
+        const radius = mods.includes('mod_magnetic_intake') ? 3.15 * 1.18 : 3.15;
         const dx = racer.x - node.x;
         const dz = racer.z - node.z;
-        if (dx * dx + dz * dz <= 3.15 * 3.15) {
+        if (dx * dx + dz * dz <= radius * radius) {
           const collected = collectPowerUp(racer.inventory, racer.activeSlot, node.type);
           if (collected.collected) {
             racer.activeSlot = collected.newActiveSlot;
             node.active = false;
             node.respawnTimer = 6.5;
             this.metrics.pickupsCollected += 1;
+            if (this.mode === 'checkpoint' && racer.isPlayer) {
+              this.modeTimeRemaining = Math.min(90, this.modeTimeRemaining + 2.5);
+            }
             this.emitEvent({ type: 'pickup', actorId: racer.id, powerUp: node.type });
             break; // Strictly one racer per pickup!
           }

@@ -1,0 +1,350 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Pillar 1 / Safety Net: Global default-deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Reusable Hardened Primitives ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(driverId) {
+      return isSignedIn() && request.auth.uid == driverId;
+    }
+
+    function isVerifiedOwner(driverId) {
+      return isVerifiedUser() && request.auth.uid == driverId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidVehicleId(v) {
+      return v is string
+        && v.size() >= 1
+        && v.size() <= 32
+        && v in ['street_falcon', 'sand_runner', 'night_viper', 'cyber_gtr', 'phantom_x'];
+    }
+
+    function isValidModList(mods) {
+      return mods is list
+        && mods.size() <= 3
+        && (mods.size() == 0 || (mods[0] is string && mods[0].size() >= 1 && mods[0].size() <= 40))
+        && (mods.size() < 2 || (mods[1] is string && mods[1].size() >= 1 && mods[1].size() <= 40))
+        && (mods.size() < 3 || (mods[2] is string && mods[2].size() >= 1 && mods[2].size() <= 40));
+    }
+
+    function isValidUnlockedVehicles(listVal) {
+      return listVal is list
+        && listVal.size() >= 1
+        && listVal.size() <= 10
+        && isValidVehicleId(listVal[0]);
+    }
+
+    // --- Validation Blueprints (Anti-Update-Gap) ---
+    function isValidDriverProfile(data, driverId) {
+      return data.keys().hasAll([
+          'ownerId',
+          'displayName',
+          'selectedVehicleId',
+          'careerLights',
+          'careerReputation',
+          'offlineCredits',
+          'unlockedVehicles',
+          'equippedMods',
+          'prestigeTier',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId',
+          'displayName',
+          'selectedVehicleId',
+          'careerLights',
+          'careerReputation',
+          'offlineCredits',
+          'unlockedVehicles',
+          'equippedMods',
+          'prestigeTier',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.ownerId is string
+        && data.ownerId == request.auth.uid
+        && data.ownerId == driverId
+        && isValidId(data.ownerId)
+        && data.displayName is string
+        && data.displayName.size() >= 2
+        && data.displayName.size() <= 24
+        && data.displayName.matches('^[a-zA-Z0-9 _\\-]+$')
+        && isValidVehicleId(data.selectedVehicleId)
+        && data.careerLights is int
+        && data.careerLights >= 0
+        && data.careerLights <= 500
+        && data.careerReputation is int
+        && data.careerReputation >= 0
+        && data.careerReputation <= 10000000
+        && data.offlineCredits is int
+        && data.offlineCredits >= 0
+        && data.offlineCredits <= 100000000
+        && isValidUnlockedVehicles(data.unlockedVehicles)
+        && isValidModList(data.equippedMods)
+        && data.prestigeTier is int
+        && data.prestigeTier >= 0
+        && data.prestigeTier <= 10
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidCareerEventRecord(data, driverId, eventId) {
+      return data.keys().hasAll([
+          'ownerId',
+          'eventId',
+          'groupId',
+          'bestPosition',
+          'bestScore',
+          'bestTimeMs',
+          'lightsEarned',
+          'fanRunCompleted',
+          'fanDemandCompleted',
+          'completedAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId',
+          'eventId',
+          'groupId',
+          'bestPosition',
+          'bestScore',
+          'bestTimeMs',
+          'lightsEarned',
+          'fanRunCompleted',
+          'fanDemandCompleted',
+          'completedAt',
+          'updatedAt'
+        ])
+        && data.ownerId is string
+        && data.ownerId == request.auth.uid
+        && data.ownerId == driverId
+        && isValidId(data.ownerId)
+        && data.eventId is string
+        && data.eventId == eventId
+        && data.eventId.size() >= 2
+        && data.eventId.size() <= 64
+        && data.eventId.matches('^[a-zA-Z0-9_\\-]+$')
+        && data.groupId is string
+        && data.groupId.size() >= 2
+        && data.groupId.size() <= 64
+        && data.groupId.matches('^[a-zA-Z0-9_\\-]+$')
+        && data.bestPosition is int
+        && data.bestPosition >= 1
+        && data.bestPosition <= 20
+        && data.bestScore is int
+        && data.bestScore >= 0
+        && data.bestScore <= 1000000
+        && data.bestTimeMs is int
+        && data.bestTimeMs >= 0
+        && data.bestTimeMs <= 3600000
+        && data.lightsEarned is int
+        && data.lightsEarned >= 0
+        && data.lightsEarned <= 5
+        && data.fanRunCompleted is bool
+        && data.fanDemandCompleted is bool
+        && data.completedAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidVehicleMasteryRecord(data, driverId, vehicleId) {
+      return data.keys().hasAll([
+          'ownerId',
+          'vehicleId',
+          'racesCompleted',
+          'wins',
+          'distanceMeters',
+          'bestLapMs',
+          'combatActions',
+          'defensiveActions',
+          'masteryLevel',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId',
+          'vehicleId',
+          'racesCompleted',
+          'wins',
+          'distanceMeters',
+          'bestLapMs',
+          'combatActions',
+          'defensiveActions',
+          'masteryLevel',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.ownerId is string
+        && data.ownerId == request.auth.uid
+        && data.ownerId == driverId
+        && isValidId(data.ownerId)
+        && isValidVehicleId(data.vehicleId)
+        && data.vehicleId == vehicleId
+        && data.racesCompleted is int
+        && data.racesCompleted >= 0
+        && data.racesCompleted <= 100000
+        && data.wins is int
+        && data.wins >= 0
+        && data.wins <= data.racesCompleted
+        && data.distanceMeters is int
+        && data.distanceMeters >= 0
+        && data.distanceMeters <= 1000000000
+        && data.bestLapMs is int
+        && data.bestLapMs >= 0
+        && data.bestLapMs <= 3600000
+        && data.combatActions is int
+        && data.combatActions >= 0
+        && data.combatActions <= 1000000
+        && data.defensiveActions is int
+        && data.defensiveActions >= 0
+        && data.defensiveActions <= 1000000
+        && data.masteryLevel is int
+        && data.masteryLevel >= 1
+        && data.masteryLevel <= 10
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    // --- Collection: /drivers/{driverId} ---
+    match /drivers/{driverId} {
+      allow get: if isValidId(driverId) && isOwner(driverId);
+      allow list: if isSignedIn() && existing().ownerId == request.auth.uid;
+
+      allow create: if isVerifiedOwner(driverId)
+        && isValidId(driverId)
+        && isValidDriverProfile(incoming(), driverId)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+
+      allow update: if isVerifiedOwner(driverId)
+        && isValidId(driverId)
+        && isValidDriverProfile(incoming(), driverId)
+        && incoming().ownerId == existing().ownerId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          // Action: Update loadout / customization
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'displayName',
+            'selectedVehicleId',
+            'equippedMods',
+            'updatedAt'
+          ]) ||
+          // Action: Sync offline career progression & unlocks
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'displayName',
+            'selectedVehicleId',
+            'careerLights',
+            'careerReputation',
+            'offlineCredits',
+            'unlockedVehicles',
+            'equippedMods',
+            'prestigeTier',
+            'updatedAt'
+          ])
+        );
+
+      allow delete: if isValidId(driverId) && isVerifiedOwner(driverId);
+
+      // --- Subcollection: /drivers/{driverId}/careerEvents/{eventId} ---
+      match /careerEvents/{eventId} {
+        allow get: if isValidId(driverId) && isValidId(eventId) && isOwner(driverId);
+        allow list: if isOwner(driverId) && existing().ownerId == request.auth.uid;
+
+        allow create: if isVerifiedOwner(driverId)
+          && isValidId(driverId)
+          && isValidId(eventId)
+          && isValidCareerEventRecord(incoming(), driverId, eventId)
+          && incoming().completedAt == request.time
+          && incoming().updatedAt == request.time
+          && exists(/databases/$(database)/documents/drivers/$(driverId));
+
+        allow update: if isVerifiedOwner(driverId)
+          && isValidId(driverId)
+          && isValidId(eventId)
+          && isValidCareerEventRecord(incoming(), driverId, eventId)
+          && incoming().ownerId == existing().ownerId
+          && incoming().eventId == existing().eventId
+          && incoming().groupId == existing().groupId
+          && incoming().completedAt == existing().completedAt
+          && incoming().updatedAt == request.time
+          && incoming().lightsEarned >= existing().lightsEarned
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'bestPosition',
+            'bestScore',
+            'bestTimeMs',
+            'lightsEarned',
+            'fanRunCompleted',
+            'fanDemandCompleted',
+            'updatedAt'
+          ])
+          && exists(/databases/$(database)/documents/drivers/$(driverId));
+
+        allow delete: if false;
+      }
+
+      // --- Subcollection: /drivers/{driverId}/vehicleMastery/{vehicleId} ---
+      match /vehicleMastery/{vehicleId} {
+        allow get: if isValidId(driverId) && isValidId(vehicleId) && isOwner(driverId);
+        allow list: if isOwner(driverId) && existing().ownerId == request.auth.uid;
+
+        allow create: if isVerifiedOwner(driverId)
+          && isValidId(driverId)
+          && isValidId(vehicleId)
+          && isValidVehicleMasteryRecord(incoming(), driverId, vehicleId)
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && exists(/databases/$(database)/documents/drivers/$(driverId));
+
+        allow update: if isVerifiedOwner(driverId)
+          && isValidId(driverId)
+          && isValidId(vehicleId)
+          && isValidVehicleMasteryRecord(incoming(), driverId, vehicleId)
+          && incoming().ownerId == existing().ownerId
+          && incoming().vehicleId == existing().vehicleId
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && incoming().racesCompleted >= existing().racesCompleted
+          && incoming().wins >= existing().wins
+          && incoming().distanceMeters >= existing().distanceMeters
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'racesCompleted',
+            'wins',
+            'distanceMeters',
+            'bestLapMs',
+            'combatActions',
+            'defensiveActions',
+            'masteryLevel',
+            'updatedAt'
+          ])
+          && exists(/databases/$(database)/documents/drivers/$(driverId));
+
+        allow delete: if false;
+      }
+    }
+  }
+}

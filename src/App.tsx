@@ -22,8 +22,27 @@ import {
   saveLocalProfile,
   saveLocalSettings,
   xpForNextLevel,
-  type CareerEvent,
 } from './game/progression';
+import {
+  applyPrestigeReset,
+  computeEventLights,
+  computeTotalCareerLights,
+  getCareerEventById,
+  mergeCareerEventRecord,
+  updateVehicleMastery,
+  validateEquippedMods,
+  type CareerEventDef,
+} from './game/career';
+import {
+  loadCloudCareerEvents,
+  loadCloudDriverProfile,
+  signInWithGoogleDriver,
+  signOutGoogleDriver,
+  subscribeDriverAuth,
+  syncCloudCareerEvent,
+  syncCloudDriverProfile,
+  syncCloudVehicleMastery,
+} from './lib/firebase';
 import { useOnlineStatus } from './hooks/usePWAInstall';
 import { MainMenuOverlay } from './components/MainMenuOverlay';
 import { HudOverlay } from './components/HudOverlay';
@@ -33,6 +52,39 @@ import { MultiplayerModal } from './components/MultiplayerModal';
 import { CareerModal } from './components/CareerModal';
 import { SettingsModal } from './components/SettingsModal';
 import { PauseModal, ResultsModal } from './components/PauseResultsModals';
+
+class AppErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean; message: string }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, message: '' };
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, message: error?.message || 'Unexpected runtime error' };
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="fixed inset-0 bg-[#070A12] text-[#F5F7FA] flex items-center justify-center p-6">
+          <div className="max-w-md bg-[#0C111E] border border-[#FF365E] p-6">
+            <h1 className="font-display font-bold text-xl text-[#FF365E]">NEON RIVALS RECOVERY</h1>
+            <p className="mt-2 text-xs text-[#CBD5E1]">{this.state.message}</p>
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="mt-4 bg-[#00C8FF] text-[#070A12] font-display font-bold text-xs px-4 py-2 cursor-pointer"
+            >
+              RELOAD GAME
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 export function App() {
   const mountRef = useRef<HTMLDivElement | null>(null);
@@ -58,6 +110,9 @@ export function App() {
     { code: string; trackId: TrackId; mode: GameModeId; playerCount: number; status: string }[]
   >([]);
   const [mpError, setMpError] = useState<string | null>(null);
+  const [cloudUid, setCloudUid] = useState<string | null>(null);
+  const [cloudEmail, setCloudEmail] = useState<string | null>(null);
+  const [cloudStatus, setCloudStatus] = useState<string | null>(null);
 
   const isOnline = useOnlineStatus();
 
@@ -86,6 +141,69 @@ export function App() {
     document.body.dataset.state = bodyState;
   }, [screen]);
 
+  const cloudUidRef = useRef<string | null>(cloudUid);
+  cloudUidRef.current = cloudUid;
+
+  // Subscribe to Firebase Google Auth state for optional Cloud Career Save
+  useEffect(() => {
+    const unsub = subscribeDriverAuth(async (user) => {
+      if (!user) {
+        setCloudUid(null);
+        setCloudEmail(null);
+        return;
+      }
+      setCloudUid(user.uid);
+      setCloudEmail(user.email ?? user.displayName ?? 'Verified Driver');
+      try {
+        const [cloudProfile, cloudEvents] = await Promise.all([
+          loadCloudDriverProfile(user.uid),
+          loadCloudCareerEvents(user.uid),
+        ]);
+        if (cloudProfile || cloudEvents.length > 0) {
+          setProfile((prev) => {
+            const mergedRecords = { ...(prev.careerRecords ?? {}) };
+            for (const ev of cloudEvents) {
+              const cur = mergedRecords[ev.eventId];
+              mergedRecords[ev.eventId] = {
+                eventId: ev.eventId,
+                groupId: ev.groupId,
+                bestPosition: cur ? Math.min(cur.bestPosition, ev.bestPosition) : ev.bestPosition,
+                bestScore: cur ? Math.max(cur.bestScore, ev.bestScore) : ev.bestScore,
+                bestTimeMs: cur && cur.bestTimeMs > 0 ? Math.min(cur.bestTimeMs, ev.bestTimeMs) : ev.bestTimeMs,
+                lightsEarned: Math.max(cur?.lightsEarned ?? 0, ev.lightsEarned),
+                fanRunCompleted: Boolean(cur?.fanRunCompleted || ev.fanRunCompleted),
+                fanDemandCompleted: Boolean(cur?.fanDemandCompleted || ev.fanDemandCompleted),
+                completed: Math.max(cur?.lightsEarned ?? 0, ev.lightsEarned) >= 3 || Boolean(cur?.completed),
+              };
+            }
+            const ownedSet = new Set([...prev.ownedVehicles, ...(cloudProfile?.unlockedVehicles ?? [])]);
+            const merged: PlayerProfile = {
+              ...prev,
+              firebaseUid: user.uid,
+              ownedVehicles: Array.from(ownedSet),
+              careerRecords: mergedRecords,
+              careerLights: Math.max(
+                prev.careerLights ?? 0,
+                cloudProfile?.careerLights ?? 0,
+                computeTotalCareerLights(mergedRecords),
+              ),
+              credits: Math.max(prev.credits, cloudProfile?.offlineCredits ?? prev.credits),
+              prestigeTier: Math.max(prev.prestigeTier ?? 0, cloudProfile?.prestigeTier ?? 0),
+            };
+            saveLocalProfile(merged);
+            return merged;
+          });
+          setCloudStatus('Cloud career data synchronized.');
+        } else {
+          setCloudStatus('Connected to Firebase Cloud Save.');
+        }
+      } catch {
+        setCloudStatus('Signed in locally (cloud sync will retry next race).');
+      }
+    });
+    return () => unsub();
+  }, []);
+
   const handleRaceFinished = useCallback((finalSnap: RaceHudSnapshot) => {
     const p = profileRef.current;
     const cfg = lastConfigRef.current;
@@ -96,16 +214,13 @@ export function App() {
       totalRacers: finalSnap.totalRacers,
       hitsLanded: playerStanding?.hitsLanded ?? 0,
       takedowns: playerStanding?.takedowns ?? 0,
-      blocksLanded: 0,
+      blocksLanded: playerStanding?.blocksLanded ?? 0,
       difficulty: cfg?.difficulty ?? 'normal',
       currentLevel: p.level,
       currentXp: p.xp,
     });
 
-    setRewards(earned);
-    setScreen('results');
-
-    // Update persistent profile
+    // Update persistent profile + Career Lights + Vehicle Mastery
     let nextLevel = p.level;
     let nextXp = p.xp + earned.xp;
     while (nextXp >= xpForNextLevel(nextLevel)) {
@@ -114,9 +229,61 @@ export function App() {
     }
 
     const completedCareerIds = [...p.completedCareerIds];
-    if (careerIdRef.current && finalSnap.position <= 3 && !completedCareerIds.includes(careerIdRef.current)) {
-      completedCareerIds.push(careerIdRef.current);
+    let careerRecords = { ...(p.careerRecords ?? {}) };
+    const ownedVehicles = [...p.ownedVehicles];
+    let updatedCareerRecordForCloud: ReturnType<typeof mergeCareerEventRecord>['bestRecord'] | null = null;
+
+    const careerEv = careerIdRef.current ? getCareerEventById(careerIdRef.current) : undefined;
+    if (careerEv) {
+      const lights = computeEventLights({
+        event: careerEv,
+        position: finalSnap.position,
+        score: finalSnap.destructionScore ?? 0,
+        checkpointsCleared: finalSnap.checkpointsCleared ?? 0,
+        fanRunCompleted: Boolean(finalSnap.fanRun?.completed),
+        fanDemandCompleted: finalSnap.fanDemand?.status === 'succeeded',
+      });
+      const merged = mergeCareerEventRecord(careerRecords, careerEv, {
+        position: finalSnap.position,
+        score: finalSnap.destructionScore ?? 0,
+        timeMs: Math.round(finalSnap.raceTime * 1000),
+        lightsEarned: lights,
+        fanRunCompleted: Boolean(finalSnap.fanRun?.completed),
+        fanDemandCompleted: finalSnap.fanDemand?.status === 'succeeded',
+      });
+      careerRecords = merged.records;
+      updatedCareerRecordForCloud = merged.bestRecord;
+      if (lights > 0) {
+        earned.bonusLabels.push(`CAREER LIGHTS EARNED: ${lights}/5 ★ (+${merged.newLightsDelta} NEW)`);
+      }
+      if (merged.bestRecord.completed && !completedCareerIds.includes(careerEv.id)) {
+        completedCareerIds.push(careerEv.id);
+      }
+      if (
+        careerEv.unlockVehicleReward &&
+        merged.bestRecord.completed &&
+        !ownedVehicles.includes(careerEv.unlockVehicleReward)
+      ) {
+        ownedVehicles.push(careerEv.unlockVehicleReward);
+        earned.bonusLabels.push(`UNLOCKED VEHICLE: ${careerEv.unlockVehicleReward.replace('_', ' ').toUpperCase()}`);
+      }
     }
+
+    const vehicleId = cfg?.vehicleId ?? p.selectedVehicleId;
+    const approxDistance = Math.max(800, Math.round(finalSnap.raceTime * 48));
+    const vehicleMastery = updateVehicleMastery(p.vehicleMastery ?? {}, {
+      vehicleId,
+      won: finalSnap.position === 1,
+      distanceMeters: approxDistance,
+      bestLapMs: Math.round((finalSnap.bestLapTime || 0) * 1000),
+      combatActions: (playerStanding?.hitsLanded ?? 0) + (playerStanding?.takedowns ?? 0),
+      defensiveActions: playerStanding?.blocksLanded ?? 0,
+    });
+
+    const totalCareerLights = computeTotalCareerLights(careerRecords);
+
+    setRewards(earned);
+    setScreen('results');
 
     const updated: PlayerProfile = {
       ...p,
@@ -127,12 +294,38 @@ export function App() {
       racesCompleted: p.racesCompleted + 1,
       wins: p.wins + (finalSnap.position === 1 ? 1 : 0),
       takedowns: p.takedowns + (playerStanding?.takedowns ?? 0),
+      ownedVehicles,
       completedCareerIds,
+      careerRecords,
+      careerLights: totalCareerLights,
+      vehicleMastery,
     };
     setProfile(updated);
     saveLocalProfile(updated);
-    // V6.0 Security Gate: Offline races update local progression only.
-    // Competitive online rewards & rankings are awarded exclusively by server-finished authoritative matches.
+
+    // Sync offline career progression to Firebase Cloud Save if signed in with Google
+    const uid = cloudUidRef.current;
+    if (uid && !cfg?.isMultiplayer) {
+      void syncCloudDriverProfile(uid, {
+        displayName: updated.username,
+        selectedVehicleId: updated.selectedVehicleId,
+        careerLights: totalCareerLights,
+        careerReputation: updated.fanPoints,
+        offlineCredits: updated.credits,
+        unlockedVehicles: updated.ownedVehicles,
+        equippedMods: updated.equippedMods ?? [],
+        prestigeTier: updated.prestigeTier ?? 0,
+      }).catch(() => {});
+      if (updatedCareerRecordForCloud) {
+        void syncCloudCareerEvent(uid, updatedCareerRecordForCloud).catch(() => {});
+      }
+      const masteryRec = vehicleMastery[vehicleId];
+      if (masteryRec) {
+        void syncCloudVehicleMastery(uid, masteryRec).catch(() => {});
+      }
+    }
+    // V6.0/V7.0 Security Gate: Offline races update local/cloud career progression only.
+    // Competitive online rankings & server balances are updated strictly by authoritative server matches.
   }, []);
 
   const launchRace = useCallback(
@@ -142,9 +335,15 @@ export function App() {
         trackId: TrackId;
         difficulty: Difficulty;
         laps: number;
+        aiCount?: number;
+        timeLimitSec?: number;
         isMultiplayer?: boolean;
         roomCode?: string;
         careerEventId?: string | null;
+        isRivalShowdown?: boolean;
+        rivalName?: string;
+        rivalVehicleId?: string;
+        rivalCustomization?: Partial<VehicleCustomization>;
       },
       remotePlayers: { id: string; name: string; vehicleId: string; customization: VehicleCustomization }[] = [],
     ) => {
@@ -160,9 +359,21 @@ export function App() {
         difficulty: params.difficulty,
         vehicleId: carId,
         customization: custom,
-        aiCount: params.mode === 'time_trial' ? 0 : 7,
+        aiCount:
+          params.aiCount !== undefined
+            ? params.aiCount
+            : params.mode === 'time_trial' || params.mode === 'checkpoint'
+              ? 0
+              : 7,
         isMultiplayer: Boolean(params.isMultiplayer),
         roomCode: params.roomCode,
+        careerEventId: params.careerEventId ?? undefined,
+        timeLimitSec: params.timeLimitSec,
+        isRivalShowdown: params.isRivalShowdown,
+        rivalName: params.rivalName,
+        rivalVehicleId: params.rivalVehicleId,
+        rivalCustomization: params.rivalCustomization,
+        equippedMods: p.equippedMods ?? [],
       };
       setLastRaceConfig(config);
       setActiveCareerEventId(params.careerEventId ?? null);
@@ -306,13 +517,35 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Bind Enter / Space on Title screen to launch Quick Race immediately
+  // Bind Enter / Space on Title screen to launch Quick Race and Escape to close menu modals
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (screenRef.current !== 'title') return;
-      if (e.code === 'Enter' || e.code === 'Space') {
+      const target = e.target as HTMLElement | null;
+      const isTyping =
+        target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+      if (isTyping) return;
+
+      const cur = screenRef.current;
+      if (cur === 'title' && (e.code === 'Enter' || e.code === 'Space')) {
         e.preventDefault();
         launchRace({ mode: 'combat_race', trackId: 'neon_city', difficulty: 'normal', laps: 3 });
+        return;
+      }
+      if (
+        e.code === 'Escape' &&
+        (cur === 'race_setup' || cur === 'garage' || cur === 'career' || cur === 'settings' || cur === 'multiplayer')
+      ) {
+        e.preventDefault();
+        engineRef.current?.audio.playUiClick();
+        if (cur === 'garage') {
+          const p = profileRef.current;
+          const custom =
+            p.customizations[p.selectedVehicleId] ??
+            getVehicleById(p.selectedVehicleId).defaultCustomization;
+          engineRef.current?.setShowcaseVehicle(p.selectedVehicleId, custom);
+          engineRef.current?.setMode('title');
+        }
+        setScreen('title');
       }
     };
     window.addEventListener('keydown', onKey);
@@ -403,17 +636,76 @@ export function App() {
     saveLocalProfile(updated);
   };
 
-  const handleStartCareerEvent = (ev: CareerEvent) => {
+  const handleStartCareerEvent = (ev: CareerEventDef) => {
     launchRace({
       mode: ev.mode,
       trackId: ev.trackId,
       difficulty: ev.difficulty,
       laps: ev.laps,
+      aiCount: ev.aiCount,
+      timeLimitSec: ev.timeLimitSec,
       careerEventId: ev.id,
+      isRivalShowdown: ev.isRivalShowdown,
+      rivalName: ev.rival?.name,
+      rivalVehicleId: ev.rival?.vehicleId,
+      rivalCustomization: ev.rival?.customization,
     });
   };
 
+  const handleToggleMod = (modId: string) => {
+    const current = profile.equippedMods ?? [];
+    let next: string[];
+    if (current.includes(modId)) {
+      next = current.filter((m) => m !== modId);
+    } else {
+      const candidate = [...current, modId].slice(-3);
+      const checked = validateEquippedMods(candidate, profile.onlineRank ?? 1);
+      next = checked.mods.map((m) => m.id);
+    }
+    const updated: PlayerProfile = { ...profile, equippedMods: next };
+    setProfile(updated);
+    saveLocalProfile(updated);
+  };
+
+  const handleActivatePrestige = () => {
+    const res = applyPrestigeReset({
+      onlineRank: profile.onlineRank ?? 1,
+      onlineXp: profile.onlineXp ?? 0,
+      prestigeTier: profile.prestigeTier ?? 0,
+      confirmed: true,
+    });
+    if (!res.ok) return;
+    const updated: PlayerProfile = {
+      ...profile,
+      onlineRank: res.onlineRank,
+      onlineXp: res.onlineXp,
+      prestigeTier: res.prestigeTier,
+      equippedMods: validateEquippedMods(profile.equippedMods ?? [], 1).mods.map((m) => m.id),
+    };
+    setProfile(updated);
+    saveLocalProfile(updated);
+  };
+
+  const handleGoogleSignIn = async () => {
+    try {
+      setCloudStatus('Opening Google sign-in...');
+      await signInWithGoogleDriver();
+    } catch (err) {
+      setCloudStatus(err instanceof Error ? err.message : 'Google sign-in canceled.');
+    }
+  };
+
+  const handleGoogleSignOut = async () => {
+    try {
+      await signOutGoogleDriver();
+      setCloudStatus('Signed out of Cloud Save.');
+    } catch {
+      setCloudStatus('Sign out failed.');
+    }
+  };
+
   return (
+    <AppErrorBoundary>
     <div className="relative w-screen h-screen overflow-hidden bg-[#070A12]">
       {/* Isolated Full-Bleed WebGL2 Canvas Mount (Never re-renders on React HUD state updates) */}
       <div
@@ -553,8 +845,14 @@ export function App() {
         <CareerModal
           profile={profile}
           language={settings.language}
+          cloudUserEmail={cloudEmail}
+          cloudSyncStatus={cloudStatus}
           onStartCareerEvent={handleStartCareerEvent}
           onClaimMission={handleClaimMission}
+          onToggleMod={handleToggleMod}
+          onActivatePrestige={handleActivatePrestige}
+          onGoogleSignIn={handleGoogleSignIn}
+          onGoogleSignOut={handleGoogleSignOut}
           onAuthSuccess={(uname, isGuest, serverData, token) => {
             if (token) {
               authTokenRef.current = token;
@@ -649,6 +947,7 @@ export function App() {
         />
       )}
     </div>
+    </AppErrorBoundary>
   );
 }
 

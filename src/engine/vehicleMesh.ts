@@ -1,9 +1,28 @@
 import * as THREE from 'three';
-import type { HandlingArchetype, VehicleArchetype, VehicleCustomization, VehicleDimensions } from '../game/types';
+import type {
+  HandlingArchetype,
+  VehicleArchetype,
+  VehicleCustomization,
+  VehicleDamageStage,
+  VehicleDimensions,
+} from '../game/types';
+
+export interface VehicleLodStats {
+  lod0Triangles: number;
+  lod1Triangles: number;
+  lod2Triangles: number;
+  lod3Triangles: number;
+}
 
 export interface VehicleRig {
   root: THREE.Group;
   bodyGroup: THREE.Group;
+  lod?: THREE.LOD;
+  lodStats?: VehicleLodStats;
+  basePaintColor?: THREE.Color;
+  basePaintRoughness?: number;
+  basePaintClearcoat?: number;
+  currentDamageStage?: VehicleDamageStage;
   wheelPivots: THREE.Group[]; // [FL, FR, RL, RR]
   wheelMeshes: THREE.Group[]; // [FL, FR, RL, RR] spin containers
   wheelBaseY: number[]; // rest local Y per wheel for suspension animation
@@ -978,9 +997,72 @@ export function buildVehicleRig(
   shieldDome.visible = false;
   root.add(shieldDome);
 
+  // 12. True Multi-Level Vehicle LOD (V7.0 Sec 9): LOD0 full rig, LOD1 opponent, LOD2 distant, LOD3 silhouette
+  const lod = new THREE.LOD();
+  lod.name = 'vehicle_lod_root';
+  const lodGeos: THREE.BufferGeometry[] = [];
+  const trackLodGeo = <T extends THREE.BufferGeometry>(g: T): T => {
+    lodGeos.push(g);
+    return g;
+  };
+
+  // LOD1 (45m+): simplified silhouette body + cabin + 4 wheels (lower segment count)
+  const lod1Group = new THREE.Group();
+  const lod1Body = new THREE.Mesh(trackLodGeo(new THREE.BoxGeometry(carWidth * 0.96, deckHeight - rideH, carLength * 0.98)), paintMat);
+  lod1Body.position.set(0, rideH + (deckHeight - rideH) * 0.5, 0);
+  const lod1Cabin = new THREE.Mesh(trackLodGeo(new THREE.BoxGeometry(carWidth * 0.72, cabinHeight * 0.85, carLength * 0.44)), glassMat);
+  lod1Cabin.position.set(0, deckHeight + cabinHeight * 0.4, -carLength * 0.06);
+  const lod1WheelGeo = trackLodGeo(new THREE.CylinderGeometry(wheelRadius, wheelRadius, tireWidth, 8));
+  lod1WheelGeo.rotateZ(Math.PI / 2);
+  lod1Group.add(lod1Body, lod1Cabin);
+  for (const [wx, wy, wz] of wheelPositions) {
+    const w = new THREE.Mesh(lod1WheelGeo, tireMat);
+    w.position.set(wx, wy, wz);
+    lod1Group.add(w);
+  }
+
+  // LOD2 (95m+): unified hull + cabin silhouette
+  const lod2Group = new THREE.Group();
+  const lod2Body = new THREE.Mesh(trackLodGeo(new THREE.BoxGeometry(carWidth * 0.94, deckHeight - rideH + 0.04, carLength * 0.96)), paintMat);
+  lod2Body.position.set(0, rideH + (deckHeight - rideH) * 0.5, 0);
+  const lod2Cab = new THREE.Mesh(trackLodGeo(new THREE.BoxGeometry(carWidth * 0.68, cabinHeight * 0.76, carLength * 0.4)), glassMat);
+  lod2Cab.position.set(0, deckHeight + cabinHeight * 0.36, -carLength * 0.06);
+  lod2Group.add(lod2Body, lod2Cab);
+
+  // LOD3 (165m+): minimal distant racing wedge silhouette (12 triangles)
+  const lod3Group = new THREE.Group();
+  const lod3Hull = new THREE.Mesh(trackLodGeo(new THREE.BoxGeometry(carWidth * 0.92, deckHeight + cabinHeight * 0.45, carLength * 0.92)), paintMat);
+  lod3Hull.position.set(0, rideH + (deckHeight + cabinHeight * 0.45) * 0.5, 0);
+  lod3Group.add(lod3Hull);
+
+  // Wrap high-detail visual group as LOD0 while keeping root/bodyGroup/wheels untouched for animations & garage
+  const lod0Triangles = countObjectTriangles(root);
+  const lodStats: VehicleLodStats = {
+    lod0Triangles,
+    lod1Triangles: countObjectTriangles(lod1Group),
+    lod2Triangles: countObjectTriangles(lod2Group),
+    lod3Triangles: countObjectTriangles(lod3Group),
+  };
+
+  lod.addLevel(bodyGroup, 0);
+  lod.addLevel(lod1Group, 52);
+  lod.addLevel(lod2Group, 105);
+  lod.addLevel(lod3Group, 180);
+  root.add(lod);
+
+  const basePaintColor = new THREE.Color(customization.bodyColor);
+  const basePaintRoughness = paintMat.roughness;
+  const basePaintClearcoat = paintMat.clearcoat;
+
   return {
     root,
     bodyGroup,
+    lod,
+    lodStats,
+    basePaintColor,
+    basePaintRoughness,
+    basePaintClearcoat,
+    currentDamageStage: 'healthy',
     wheelPivots,
     wheelMeshes,
     wheelBaseY,
@@ -998,6 +1080,7 @@ export function buildVehicleRig(
     hitFlashMaterials: [paintMat],
     dispose: () => {
       geometries.forEach((g) => g.dispose());
+      lodGeos.forEach((g) => g.dispose());
       paintMat.dispose();
       trimMat.dispose();
       carbonMat.dispose();
@@ -1074,6 +1157,9 @@ export function applyVehicleCustomization(rig: VehicleRig, custom: VehicleCustom
     mat.clearcoat = custom.finish === 'matte' ? 0.14 : 1.0;
     mat.needsUpdate = true;
   }
+  if (rig.basePaintColor) rig.basePaintColor.set(custom.bodyColor);
+  rig.basePaintRoughness = rig.paintMaterials[0]?.roughness ?? 0.24;
+  rig.basePaintClearcoat = rig.paintMaterials[0]?.clearcoat ?? 1.0;
   for (const mat of rig.rimMaterials) {
     mat.color.set(custom.rimColor);
   }
@@ -1088,3 +1174,99 @@ export function applyVehicleCustomization(rig: VehicleRig, custom: VehicleCustom
   const carbonMat = new THREE.MeshStandardMaterial({ color: 0x1a202e, roughness: 0.38, metalness: 0.58 });
   rebuildSpoiler(rig.spoilerGroup, custom.spoiler, 1.98, rig.paintMaterials[0], carbonMat);
 }
+
+export function countObjectTriangles(obj: THREE.Object3D): number {
+  let tris = 0;
+  obj.traverse((child) => {
+    if (child instanceof THREE.Mesh && child.geometry) {
+      const geo = child.geometry;
+      if (geo.index) {
+        tris += Math.floor(geo.index.count / 3);
+      } else {
+        const pos = geo.getAttribute('position');
+        if (pos) tris += Math.floor(pos.count / 3);
+      }
+    }
+  });
+  return tris;
+}
+
+/**
+ * Maps authoritative vehicle health ratio to one of 5 progressive visual damage stages (V7.0 Sec 31).
+ */
+export function computeVehicleDamageStage(
+  hp: number,
+  maxHp: number,
+  destroyed: boolean,
+): VehicleDamageStage {
+  if (destroyed || hp <= 0) return 'wrecked';
+  const ratio = Math.max(0, Math.min(1, hp / Math.max(1, maxHp)));
+  if (ratio > 0.78) return 'healthy';
+  if (ratio > 0.52) return 'light';
+  if (ratio > 0.26) return 'moderate';
+  return 'critical';
+}
+
+const DAMAGE_SCORCH_COLOR = new THREE.Color(0x1b1d24);
+
+/**
+ * Applies progressive visible damage state to paint roughness, clearcoat, scorched tint, and lamp integrity.
+ * Automatically restores pristine vehicle appearance when repaired back to Healthy.
+ */
+export function applyVehicleDamageVisuals(
+  rig: VehicleRig,
+  stage: VehicleDamageStage,
+  elapsedSec = 0,
+): void {
+  const baseColor = rig.basePaintColor ?? new THREE.Color(0xffffff);
+  const baseRough = rig.basePaintRoughness ?? 0.24;
+  const baseClear = rig.basePaintClearcoat ?? 1.0;
+
+  let scorchLerp = 0;
+  let roughAdd = 0;
+  let clearMult = 1.0;
+  let hlIntensity = 2.4;
+
+  switch (stage) {
+    case 'healthy':
+      scorchLerp = 0;
+      roughAdd = 0;
+      clearMult = 1.0;
+      hlIntensity = 2.4;
+      break;
+    case 'light':
+      scorchLerp = 0.08;
+      roughAdd = 0.08;
+      clearMult = 0.82;
+      hlIntensity = 2.2;
+      break;
+    case 'moderate':
+      scorchLerp = 0.22;
+      roughAdd = 0.18;
+      clearMult = 0.52;
+      hlIntensity = 1.65;
+      break;
+    case 'critical':
+      scorchLerp = 0.4;
+      roughAdd = 0.34;
+      clearMult = 0.2;
+      // Damaged flickering headlamps at critical HP
+      hlIntensity = Math.sin(elapsedSec * 24) > 0.1 ? 1.4 : 0.25;
+      break;
+    case 'wrecked':
+      scorchLerp = 0.72;
+      roughAdd = 0.55;
+      clearMult = 0.05;
+      hlIntensity = 0.05;
+      break;
+  }
+
+  for (const mat of rig.paintMaterials) {
+    mat.color.copy(baseColor).lerp(DAMAGE_SCORCH_COLOR, scorchLerp);
+    mat.roughness = Math.min(0.95, baseRough + roughAdd);
+    mat.clearcoat = Math.max(0, baseClear * clearMult);
+  }
+  rig.headlightMaterial.emissiveIntensity = hlIntensity;
+  rig.currentDamageStage = stage;
+}
+

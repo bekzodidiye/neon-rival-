@@ -111,10 +111,40 @@ export const ResultsModal: React.FC<ResultsModalProps> = ({
           </div>
 
           <div className="text-right font-mono-num">
-            <div className="text-xs text-[#94A3B8]">TOTAL TIME</div>
-            <div className="text-2xl font-bold text-[#F5F7FA]">{fmt(hud.raceTime)}</div>
+            {hud.mode === 'destruction_arena' ? (
+              <>
+                <div className="text-xs text-[#FF8A00]">DESTRUCTION SCORE</div>
+                <div className="text-2xl font-bold text-[#F5F7FA]">{(hud.destructionScore ?? 0).toLocaleString()} PTS</div>
+              </>
+            ) : hud.mode === 'checkpoint' ? (
+              <>
+                <div className="text-xs text-[#00F5D4]">CHECKPOINTS CLEARED</div>
+                <div className="text-2xl font-bold text-[#F5F7FA]">{hud.checkpointsCleared ?? 0} GATES</div>
+              </>
+            ) : (
+              <>
+                <div className="text-xs text-[#94A3B8]">TOTAL TIME</div>
+                <div className="text-2xl font-bold text-[#F5F7FA]">{fmt(hud.raceTime)}</div>
+              </>
+            )}
           </div>
         </div>
+
+        {/* Bonus Challenge Badges */}
+        {(hud.fanRun?.completed || hud.fanDemand?.status === 'succeeded') && (
+          <div className="mt-3 flex flex-wrap gap-2 font-mono-num text-xs">
+            {hud.fanRun?.completed && (
+              <span className="bg-[#FF2A85]/20 border border-[#FF2A85]/60 text-[#FF2A85] px-2.5 py-1 font-bold">
+                ★ FAN RUN COMPLETED
+              </span>
+            )}
+            {hud.fanDemand?.status === 'succeeded' && (
+              <span className="bg-[#FACC15]/20 border border-[#FACC15]/60 text-[#FACC15] px-2.5 py-1 font-bold">
+                ★ FAN DEMAND CLEARED: {hud.fanDemand.label}
+              </span>
+            )}
+          </div>
+        )}
 
         {/* Rewards Summary */}
         {rewards && (
@@ -133,6 +163,16 @@ export const ResultsModal: React.FC<ResultsModalProps> = ({
               <div className="text-[10px] text-[#94A3B8]">FAN POINTS</div>
               <div className="text-xl font-bold text-[#8B5CF6]">+{rewards.fanPoints} FANS</div>
             </div>
+          </div>
+        )}
+
+        {rewards && rewards.bonusLabels.length > 0 && (
+          <div className="mt-2.5 flex flex-wrap gap-1.5 font-mono-num text-[11px]">
+            {rewards.bonusLabels.map((lbl, idx) => (
+              <span key={idx} className="bg-[#101522] border border-white/10 text-[#CBD5E1] px-2 py-0.5">
+                {lbl}
+              </span>
+            ))}
           </div>
         )}
 

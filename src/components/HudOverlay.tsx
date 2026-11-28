@@ -201,6 +201,34 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
               ELIMINATION IN {hud.eliminationTimer}s
             </div>
           )}
+
+          {hud.mode === 'destruction_arena' && (
+            <div className="mt-1.5 flex items-center gap-3 text-xs font-mono-num font-bold tracking-wider">
+              <span className="text-[#FF8A00]">SCORE {hud.destructionScore ?? 0}</span>
+              <span className="text-[#FF365E]">TIME {hud.modeTimeRemaining ?? 0}s</span>
+            </div>
+          )}
+
+          {hud.mode === 'checkpoint' && (
+            <div className="mt-1.5 flex items-center gap-3 text-xs font-mono-num font-bold tracking-wider">
+              <span className="text-[#00F5D4]">GATES {hud.checkpointsCleared ?? 0}</span>
+              <span className={(hud.modeTimeRemaining ?? 0) <= 6 ? 'text-[#FF365E]' : 'text-[#F5F7FA]'}>
+                CLOCK {hud.modeTimeRemaining ?? 0}s
+              </span>
+            </div>
+          )}
+
+          {hud.fanRun?.active && (
+            <div className="mt-1.5 text-[11px] font-mono-num font-bold text-[#FF2A85] tracking-wider">
+              FAN RUN {hud.fanRun.gatesCleared}/{hud.fanRun.gatesTotal} · {hud.fanRun.remainingSec}s
+            </div>
+          )}
+
+          {hud.fanDemand && hud.fanDemand.status === 'active' && (
+            <div className="mt-1 text-[11px] font-mono-num font-bold text-[#FACC15] tracking-wider">
+              DEMAND: {hud.fanDemand.label} ({hud.fanDemand.progress}/{hud.fanDemand.target}) · {hud.fanDemand.remainingSec}s
+            </div>
+          )}
         </div>
 
         {/* TOP-RIGHT CLUSTER: Speedometer + FPS/Ping + Square Utility Buttons */}
@@ -220,7 +248,6 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
               <span className="text-[#F5F7FA] font-bold">G{hud.gear}</span>
               {hud.isDrafting && <span className="text-[#00D8FF] font-bold">SLIPSTREAM</span>}
               {hud.isDrifting && <span className="text-[#25F4A0] font-bold">DRIFT</span>}
-              {settings.showFps && <span>{hud.fps} FPS</span>}
               {isMultiplayer && <span className="text-[#25F4A0]">{hud.pingMs} ms</span>}
             </div>
             {/* RPM Bar */}
@@ -422,7 +449,12 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
           <div className="flex items-center gap-3 bg-[#070A12]/88 px-3 py-1.5 border border-white/15">
             <div className="w-40 sm:w-48">
               <div className="flex justify-between text-[10px] font-mono-num font-bold mb-1">
-                <span className="text-[#94A3B8]">{t(lang, 'integrity')}</span>
+                <span className="text-[#94A3B8]">
+                  {t(lang, 'integrity')}
+                  {hud.damageStage && hud.damageStage !== 'healthy' && (
+                    <span className="ml-1.5 text-[#FF8A00] uppercase">· {hud.damageStage}</span>
+                  )}
+                </span>
                 <span style={{ color: hpPct <= 30 ? '#FF2A55' : '#25F4A0' }}>
                   {Math.ceil((hud.hp / Math.max(1, hud.maxHp)) * (hud.maxHealthBlocks || 6))}/{hud.maxHealthBlocks || 6} BLK
                 </span>
